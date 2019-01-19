@@ -37,7 +37,7 @@ ifdef ABI
 CFLAGS += -m$(ABI)
 endif
 
-OPTFLAGS = -O2 -march=$(CPU) -mtune=$(CPU)
+OPTFLAGS = -O1 -march=$(CPU) -mtune=$(CPU)
 
 ARFLAGS = -urs
 
