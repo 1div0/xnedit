@@ -19,9 +19,15 @@ LD = $(CC)
 # a '-lXp' in front of the -lXext in LIBS. You also drop the
 # -lXpm from that list.
 
-MAXX = /opt/MaXX
+ifndef MAXX_HOME
+MAXX_HOME = /opt/MaXX
+endif
 
-MOTIF = $(MAXX)/OpenMotif-2.3.1
+# Indy 1.1.0
+MOTIF = $(MAXX_HOME)/OpenMotif-2.3.1
+
+# Indigo 2.0
+#MOTIF = $(MAXX_HOME)/Motif-2.3.8
 
 #
 # To evaluate an alternative layout for the Replace/Find dialog, add
@@ -32,7 +38,7 @@ MOTIF = $(MAXX)/OpenMotif-2.3.1
 #
 # To use the Motif file dialog, add -DMOTIF_FILEDIALOG to the CFLAGS.
 #
-CFLAGS = -std=gnu99 -I/usr/include/X11 -I$(MOTIF)/include -DHAVE__XMVERSIONSTRING -DSGI_CUSTOM -DUSE_DIRENT -DUSE_LPR_PRINT_CMD $(shell pkg-config --cflags xft fontconfig)
+CFLAGS = -std=gnu99 -I/usr/include/X11 -I$(MOTIF)/include -DHAVE__XMVERSIONSTRING -DMOTIF_FILEDIALOG -DSGI_CUSTOM -DUSE_DIRENT -DUSE_LPR_PRINT_CMD $(shell pkg-config --cflags xft fontconfig)
 ifdef ABI
 CFLAGS += -m$(ABI)
 endif
