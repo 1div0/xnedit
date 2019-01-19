@@ -1,15 +1,28 @@
 # $Id: Makefile.linux,v 1.14 2006/10/26 02:20:16 tringali Exp $
-CC=cc
-AR=ar
+
+CPU = native
+
+#ABI = 32
+ABI = 64
+
+ifndef CC
+CC = gcc
+else
+CC = $(CROSS)gcc
+endif
+
+AR = $(CROSS)ar
+LD = $(CC)
 
 # For editres, add -DEDITRES to CFLAGS and -lXmu to LIBS
 # If using a Motif 2.1 compatible library (LessTif, OM) add
 # a '-lXp' in front of the -lXext in LIBS. You also drop the
 # -lXpm from that list.
-# Ensure that the Motif/LessTif headers and libs are found!
-# e.g. you may have to add something like 
-#   -I/usr/lesstif/include  to CFLAGS and
-#   -L/usr/lesstif/lib      to LIBS
+
+MAXX = /opt/MaXX
+
+MOTIF = $(MAXX)/OpenMotif-2.3.1
+
 #
 # To evaluate an alternative layout for the Replace/Find dialog, add
 # -DREPLACE_SCOPE to the CFLAGS. See the README file for more information.
@@ -18,12 +31,17 @@ AR=ar
 # add -DHAVE__XMVERSIONSTRING to CFLAGS
 #
 # To use the Motif file dialog, add -DMOTIF_FILEDIALOG to the CFLAGS.
-# 
-CFLAGS=-O -std=gnu99 -I/usr/X11R6/include -I/usr/include/X11 -DSGI_CUSTOM -DUSE_DIRENT -DUSE_LPR_PRINT_CMD $(shell pkg-config --cflags xft fontconfig)
+#
+CFLAGS = -std=gnu99 -I/usr/include/X11 -I$(MOTIF)/include -DHAVE__XMVERSIONSTRING -DSGI_CUSTOM -DUSE_DIRENT -DUSE_LPR_PRINT_CMD $(shell pkg-config --cflags xft fontconfig)
+ifdef ABI
+CFLAGS += -m$(ABI)
+endif
 
-ARFLAGS=-urs
+OPTFLAGS = -O2 -march=$(CPU) -mtune=$(CPU)
 
-LIBS=-L/usr/X11R6/lib -lXm -lXt -lX11 -lXrender -lXpm -lm $(shell pkg-config --libs xft fontconfig)
+ARFLAGS = -urs
+
+XNCLIBS = -lXt -lX11 -lm
+XNEDITLIBS = -L$(MOTIF)/lib$(ABI) -lXm -lXt -lX11 -lXrender -lXp -lXpm -lXext -lSM -lICE -lm $(shell pkg-config --libs xft fontconfig)
 
 include Makefile.common
-

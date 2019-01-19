@@ -13,7 +13,7 @@ libNUtil.a: $(OBJS)
 	$(AR) $(ARFLAGS) libNUtil.a $(OBJS)
 
 printUtils.o: printUtils.c
-	$(CC) -c $(CFLAGS) $(PRINTFLAGS) -o $@ printUtils.c
+	$(CC) -c $(CFLAGS) $(OPTFLAGS) $(PRINTFLAGS) -o $@ printUtils.c
 
 clean:
 	rm -f $(OBJS) libNUtil.a

@@ -1,15 +1,15 @@
 SHELL=/bin/sh
 #
-# Makefile for NEdit text editor
+# Makefile for XNEdit text editor
 #
 # Targets are the suffixes of the system-specific makefiles in
 # the makefiles/ directory.
-# For example, to build NEdit for Solaris, give the command
+# For example, to build XNEdit for Solaris, give the command
 #
 #   make solaris
 #
 # This builds an intermediate library in the util/ directory,
-# then builds the nedit and nc executables in the source/ directory.
+# then builds the xnedit and xnc executables in the source/ directory.
 #
 
 all:
@@ -55,7 +55,7 @@ realclean: clean
 #
 # The following is for creating binary packages of NEdit.
 #
-RELEASE=xnedit-5.7-`uname -s`-`uname -m`
+RELEASE=xnedit-0.9-`uname -s`-`uname -m`
 BINDIST-FILES=source/xnedit source/xnc README COPYRIGHT ReleaseNotes doc/nedit.doc doc/nedit.html doc/nedit.man doc/nc.man doc/faq.txt
 
 dist-bin: $(BINDIST-FILES)

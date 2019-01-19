@@ -5,7 +5,7 @@
 #
 
 .c.o:
-	$(CC) -c -I../Xlt $(CFLAGS) -o $@ $<
+	$(CC) -c -I../Xlt $(CFLAGS) $(OPTFLAGS) -o $@ $<
     
 OBJS = BubbleButton.o SlideC.o 
 

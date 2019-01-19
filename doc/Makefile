@@ -66,7 +66,7 @@ html/nedit.html: .version help.etx setext
 	  fi
 
 nedit.doc: .version help.etx setext
-	@ echo "Creating NEdit plain text documenation..."
+	@ echo "Creating XNEdit plain text documenation..."
 	@ ./setext -c NEDITDOC -v version="`cat .version`" help.etx nedit.doc
 
 nc.man: .version
@@ -74,7 +74,7 @@ nedit.man: .version
 .pod.man:
 	@ echo "Creating $* man page..."
 	@ which pod2man > /dev/null 2>&1 || ( echo "Sorry, you need pod2man." && exit 1 )
-	@ pod2man --release="`cat .version`" --center="NEdit documentation" $*.pod > $@ 
+	@ pod2man --release="`cat .version`" --center="XNEdit documentation" $*.pod > $@ 
 
 doc: .version nedit.doc nedit.html html/nedit.html
 
@@ -83,7 +83,7 @@ man: .version nedit.man nc.man
 all: help doc man
 
 clean:
-	@ echo "Removing generated NEdit documentation..."
+	@ echo "Removing generated XNEdit documentation..."
 	@ rm -rf help nedit.html html nedit.doc .version nedit.man nc.man
 
 #
