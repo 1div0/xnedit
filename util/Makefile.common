@@ -5,7 +5,7 @@
 
 OBJS = DialogF.o getfiles.o printUtils.o misc.o fileUtils.o \
 	prefFile.o fontsel.o managedList.o utils.o clearcase.o motif.o \
-	rbTree.o refString.o nedit_malloc.o libxattr.o
+	rbTree.o refString.o nedit_malloc.o libxattr.o filedialog.o
 
 all: libNUtil.a
 
@@ -13,7 +13,7 @@ libNUtil.a: $(OBJS)
 	$(AR) $(ARFLAGS) libNUtil.a $(OBJS)
 
 printUtils.o: printUtils.c
-	$(CC) -c $(CFLAGS) $(PRINTFLAGS) -o $@ printUtils.c
+	$(CC) -c $(CFLAGS) $(OPTFLAGS) $(PRINTFLAGS) -o $@ printUtils.c
 
 clean:
 	rm -f $(OBJS) libNUtil.a

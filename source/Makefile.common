@@ -12,7 +12,7 @@ XLTLIB = ../Xlt/libXlt.a
 XMLLIB = ../Microline/XmL/libXmL.a
 
 .c.o:
-	$(CC) -c -I../Microline -I../Xlt $(CFLAGS) -o $@ $<
+	$(CC) -c -I../Microline -I../Xlt $(CFLAGS) $(OPTFLAGS) -o $@ $<
 
 all: xnedit xnc
 
@@ -20,12 +20,11 @@ all: xnedit xnc
 # we only want natural rebuilds to regenerate the link date.
 xnedit: $(OBJS) ../util/libNUtil.a $(XMLLIB) $(XLTLIB)
 	$(CC) $(CFLAGS) -c linkdate.c -o linkdate.o
-	$(CC) $(CFLAGS) $(OBJS) linkdate.o $(XMLLIB) \
-	 $(XLTLIB) ../util/libNUtil.a $(LIBS) -o $@
+	$(LD) $(CFLAGS) $(OBJS) linkdate.o $(XMLLIB) \
+	 $(XLTLIB) ../util/libNUtil.a $(XNEDITLIBS) -o $@
 
-# Note LIBS isn't quite right here; it links unnecessarily against Motif
 xnc: nc.o server_common.o ../util/libNUtil.a
-	$(CC) $(CFLAGS) nc.o server_common.o ../util/libNUtil.a $(LIBS) -o $@
+	$(LD) $(CFLAGS) nc.o server_common.o ../util/libNUtil.a $(XNCLIBS) -o $@
 
 help.o: help.c
 	$(CC) $(CFLAGS) $(BIGGER_STRINGS) -c help.c -o $@
