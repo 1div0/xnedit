@@ -61,6 +61,12 @@
 
 /* function prototype */
 
-char *FontSel(Widget parent, const char *currFont);
+char *FontSel(Widget parent, const char *curFont);
+
+char* FontNameAddAttribute(
+        const char *name,
+        size_t len,
+        const char *attribute,
+        const char *value);
 
 #endif /* NEDIT_FONTSEL_H_INCLUDED */
