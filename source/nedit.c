@@ -111,6 +111,7 @@ WindowInfo *WindowList = NULL;
 Display *TheDisplay = NULL;
 char *ArgV0 = NULL;
 Boolean IsServer = False;
+Boolean BackgroundRun = False;
 Widget TheAppShell;
 
 /* Reasons for choice of default font qualifications:
@@ -383,7 +384,7 @@ static char *fallbackResources[] = {
     "*windowsMenu.closePane.accelerator: Ctrl<Key>1",
     "*windowsMenu.closePane.acceleratorText: Ctrl+1",
     "*helpMenu.mnemonic: H",
-    "nedit.help.helpForm.sw.helpText*baseTranslations: #override\
+    "?.help.helpForm.sw.helpText*baseTranslations: #override\
 <Key>Tab:help-focus-buttons()\\n\
 <Key>Return:help-button-action(\"close\")\\n\
 Ctrl<Key>F:help-button-action(\"find\")\\n\
@@ -402,18 +403,25 @@ Ctrl<Key>G:help-button-action(\"findAgain\")\\n\
 
 static const char cmdLineHelp[] =
 #ifndef VMS
-"Usage:  nedit [-read] [-create] [-line n | +n] [-server] [-do command]\n\
+"Usage: xnedit [-read] [-create] [-line n | +n] [-server] [-do command]\n\
 	      [-tags file] [-tabs n] [-wrap] [-nowrap] [-autowrap]\n\
 	      [-autoindent] [-noautoindent] [-autosave] [-noautosave]\n\
 	      [-lm languagemode] [-rows n] [-columns n] [-font font]\n\
 	      [-geometry geometry] [-iconic] [-noiconic] [-svrname name]\n\
 	      [-display [host]:server[.screen] [-xrm resourcestring]\n\
 	      [-import file] [-background color] [-foreground color]\n\
-	      [-tabbed] [-untabbed] [-group] [-V|-version] [-h|-help]\n\
-	      [--] [file...]\n";
+	      [-tabbed] [-untabbed] [-group] [-bgrun] [-V|-version]\n\
+	      [-h|-help] [--] [file...]\n";
 #else
 "[Sorry, no on-line help available.]\n"; /* Why is that ? */
 #endif /*VMS*/
+
+static char *XNEditAppName = "nedit";
+
+char* GetAppName(void)
+{
+    return XNEditAppName;
+}
 
 int main(int argc, char **argv)
 {
@@ -432,6 +440,11 @@ int main(int argc, char **argv)
 
     /* Warn user if this has been compiled wrong. */
     enum MotifStability stability = GetMotifStability();
+    
+    char *appNameVar = getenv("XNEDIT_APPNAME");
+    if(appNameVar) {
+        XNEditAppName = appNameVar;
+    }
 
     if (stability == MotifKnownBad) {
         fputs("nedit: WARNING: This version of NEdit is built incorrectly, and will be unstable.\n",
@@ -445,6 +458,39 @@ int main(int argc, char **argv)
 
     /* Save the command which was used to invoke nedit for restart command */
     ArgV0 = argv[0];
+    
+    for (i=1; i<argc; i++) {
+        if(opts && !strcmp(argv[1], "--")) {
+            opts = False;
+            continue;
+        } else if (opts && !strcmp(argv[i], "-bgrun")) {
+            BackgroundRun = True;
+            break;
+        }
+    }
+    opts = True;
+    
+    int retpipe[2];
+    if(BackgroundRun) {
+        if(pipe(retpipe)) {
+            perror("pipe");
+            fprintf(stderr, "Abort.\n");
+            return 1;
+        }
+        pid_t pid = fork();
+        if(pid < 0) {
+            perror("fork");
+            fprintf(stderr, "Abort.\n");
+            return 1;
+        } else if(pid > 0) {
+            int ret = 0;
+            if(read(retpipe[0], &ret, sizeof(int)) != sizeof(int)) {
+                return 1;
+            }
+            return ret;
+        }
+    }
+    
 
     /* Set locale for C library, X, and Motif input functions. 
        Reverts to "C" if requested locale not available. */
@@ -648,6 +694,8 @@ int main(int argc, char **argv)
     	    	gotoLine = True;
     	} else if (opts && !strcmp(argv[i], "-server")) {
     	    IsServer = True;
+        } else if (opts && !strcmp(argv[i], "-bgrun")) {
+    	    /* noop */
         } else if (opts && !strcmp(argv[i], "-xwarn")) {
             XtAppSetWarningHandler(context, showWarningFilter);
 	} else if (opts && (!strcmp(argv[i], "-iconic") || 
@@ -833,7 +881,18 @@ int main(int argc, char **argv)
     /* Set up communication port and write ~/.nedit_server_process file */
     if (IsServer)
     	InitServerCommunication();
-
+    
+    if (BackgroundRun) {
+        /* Tell the parent process to return */
+        close(0);
+        close(1);
+        close(2);
+        int ret = 0;
+        write(retpipe[1], &ret, sizeof(int));
+        close(retpipe[0]);
+        close(retpipe[1]);
+    }
+    
     /* Process events. */
     if (IsServer)
     	ServerMainLoop(context);
@@ -1005,7 +1064,8 @@ static void patchResourcesForVisual(void)
             {
                 /* Qualify by application name to prevent them from being
                    converted against the wrong colormap. */
-                char buf[1024] = "*" APP_NAME;
+                char buf[1024];
+                snprintf(buf, 2, "*%s", APP_NAME);
                 strcat(buf, fallbackResources[resIndex]);
                 XrmPutLineResource(&db, buf);
             }
@@ -1069,13 +1129,13 @@ static void patchResourcesForKDEbug(void)
         const char* resource = buggyResources[i][0];
         const char* buggyValue = buggyResources[i][1];
         const char* defaultValue = buggyResources[i][2];
-        char name[128] = APP_NAME;
-        char class[128] = APP_CLASS;
+        char name[128];
+        char class[128];
         char* type;
         XrmValue resValue;
         
-        strcat(name, resource);
-        strcat(class, resource); /* Is this ok ? */
+        snprintf(name, 128, "%s%s", APP_NAME, resource);
+        snprintf(class, 128, "%s%s", APP_CLASS, resource); /* Is this ok ? */
         
         if (XrmGetResource(db, name, class, &type, &resValue) &&
             !strcmp(type, XmRString))

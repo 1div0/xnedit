@@ -136,7 +136,7 @@ static struct {
 static PrefDescripRec PrefDescrip[] = {
     {"autoStart", "AutoStart", PREF_BOOLEAN, "True",
       &Preferences.autoStart, NULL, True},
-    {"serverCommand", "ServerCommand", PREF_STRING, "xnedit -server",
+    {"serverCommand", "ServerCommand", PREF_STRING, "xnedit -server -bgrun",
       Preferences.serverCmd, (void *)sizeof(Preferences.serverCmd), False},
     {"serverName", "serverName", PREF_STRING, "", Preferences.serverName,
       (void *)sizeof(Preferences.serverName), False},
@@ -557,7 +557,7 @@ static int startServer(const char *message, const char *commandLineArgs)
 #else /* Unix */
     commandLine = XtMalloc(strlen(Preferences.serverCmd) +
     	    strlen(commandLineArgs) + 3);
-    sprintf(commandLine, "%s %s&", Preferences.serverCmd, commandLineArgs);
+    sprintf(commandLine, "%s %s", Preferences.serverCmd, commandLineArgs);
 #endif
 
     sysrc=system(commandLine);
@@ -1001,7 +1001,7 @@ static void copyCommandLineArg(CommandLine *commandLine, const char *arg)
 /* Print version of 'xnc' */
 static void printNcVersion(void ) {
    static const char *const xncHelpText = \
-   "xnc (XNEdit) Version 0.9 (January 2019)\n\n\
+   "xnc (XNEdit) Version 1.0 (February 2019)\n\n\
      Built on: %s, %s, %s\n\
      Built at: %s, %s\n";
      

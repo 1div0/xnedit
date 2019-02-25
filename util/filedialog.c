@@ -52,7 +52,7 @@ static Pixmap fileIcon;
 static Pixmap folderShape;
 static Pixmap fileShape;
 
-static int LastView = 0; // 0: icon   1: list   2: grid(not finished yet)
+static int LastView = 1; // 0: icon   1: list   2: grid(not finished yet)
 
 void initPixmaps(Display *dp, Drawable d)
 {
@@ -578,6 +578,10 @@ static int cleanupFileView(FileDialogData *data)
     }
     
     XtUnmanageChildren(data->gadgets, data->numGadgets);
+    for(int i=0;i<data->numGadgets;i++) {
+        XtDestroyWidget(data->gadgets[i]);
+    }
+    
     int ret = data->numGadgets;
     NEditFree(data->gadgets);
     data->gadgets = NULL;
@@ -677,7 +681,11 @@ static void filedialog_update_iconview(
     WidgetList gadgets = NEditCalloc(dircount+filecount, sizeof(Widget));
     
     // TODO: better width calculation
-    XtVaSetValues(data->container, XmNlargeCellWidth, maxnamelen*8, NULL);
+    // FIXME: for some reason setting XmNlargeCellWidth on Solaris doesn't work
+#ifndef __sun
+    Dimension cellwidth = maxnamelen * 8;
+    XtVaSetValues(data->container, XmNlargeCellWidth, cellwidth, NULL);
+#endif
     
     char *filter = XmTextFieldGetString(data->filter);
     char *filterStr = filter;
@@ -691,7 +699,7 @@ static void filedialog_update_iconview(
     for(int i=0;i<2;i++) {
         while(e) {
             char *name = FileName(e->path);
-            if((!data->showHidden && name[0] == '.') || fnmatch(filterStr, name, 0)) {
+            if((!data->showHidden && name[0] == '.') || (!e->isDirectory && fnmatch(filterStr, name, 0))) {
                 e = e->next;
                 continue;
             }
@@ -784,7 +792,7 @@ static void filedialog_update_lists(
         filterStr = "*";
     }
     
-    filelistwidget_add(data->dirlist, data->showHidden, filterStr, dirs, dircount);
+    filelistwidget_add(data->dirlist, data->showHidden, "*", dirs, dircount);
     filelistwidget_add(data->filelist, data->showHidden, filterStr, files, filecount);
     
     if(filter) {
@@ -950,7 +958,7 @@ static void filedialog_update_dir(FileDialogData *data, char *path)
     }
     
     update_view(data, data->dirs, data->files,
-                data->dircount, data->filecount, data->maxnamelen);
+            data->dircount, data->filecount, data->maxnamelen);
 }
 
 static void filedialog_goup(Widget w, FileDialogData *data, XtPointer d)
@@ -1036,16 +1044,39 @@ void dirlist_activate(Widget w, FileDialogData *data, XmListCallbackStruct *cb)
     }    
 }
 
+void dirlist_select(Widget w, FileDialogData *data, XmListCallbackStruct *cb)
+{
+    char *path = set_selected_path(data, cb->item);
+    if(path) {
+        data->selIsDir = TRUE;
+    }
+}
+
 void filelist_activate(Widget w, FileDialogData *data, XmListCallbackStruct *cb)
 {
     char *path = set_selected_path(data, cb->item);
     if(path) {
         data->end = True;
         data->status = FILEDIALOG_OK;
-        data->selIsDir = FALSE;
+        data->selIsDir = False;
     }
 }
 
+void filelist_select(Widget w, FileDialogData *data, XmListCallbackStruct *cb)
+{
+    if(data->type == FILEDIALOG_SAVE) {
+        char *name = NULL;
+        XmStringGetLtoR(cb->item, XmFONTLIST_DEFAULT_TAG, &name);
+        XmTextFieldSetString(data->name, name);
+        XtFree(name);
+    } else {
+        char *path = set_selected_path(data, cb->item);
+        if(path) {
+            data->selIsDir = False;
+        }
+    }
+}
+ 
 static void filedialog_setshowhidden(
         Widget w,
         FileDialogData *data,
@@ -1062,9 +1093,6 @@ static void filedialog_ok(Widget w, FileDialogData *data, XtPointer d)
             data->status = FILEDIALOG_OK;
             data->end = True;
             return;
-        } else {
-            filedialog_update_dir(data, data->selectedPath);
-            PathBarSetPath(data->pathBar, data->selectedPath);
         }
     }
     
@@ -1075,6 +1103,7 @@ static void filedialog_ok(Widget w, FileDialogData *data, XtPointer d)
                 data->selectedPath = ConcatPath(data->currentPath, newName);
                 data->status = FILEDIALOG_OK;
                 data->end = True;
+                data->selIsDir = 0;
             }
             XtFree(newName);
         }
@@ -1173,6 +1202,7 @@ static void select_iconview(Widget w, FileDialogData *data, XtPointer u)
     data->selectedview = 0;
     XtManageChild(data->scrollw);
     filedialog_update_dir(data, NULL);
+    filedialog_update_dir(data, NULL); // workaround for what I do not know
 }
 
 static void select_listview(Widget w, FileDialogData *data, XtPointer u)
@@ -1230,6 +1260,7 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     //XtManageChild(goUp);
     XtAddCallback(goUp, XmNactivateCallback,
                  (XtCallbackProc)filedialog_goup, &data);
+    
     n = 0;
     XtSetArg(args[n], XmNtopAttachment, XmATTACH_FORM); n++;
     XtSetArg(args[n], XmNtopOffset, WINDOW_SPACING); n++;
@@ -1239,33 +1270,21 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     Widget viewframe = XmCreateFrame(form, "vframe", args, n);
     XtManageChild(viewframe);
     
-    n = 0;
-    str = XmStringCreateSimple("Show hidden files");
-    XtSetArg(args[n], XmNtopAttachment, XmATTACH_FORM); n++;
-    XtSetArg(args[n], XmNtopOffset, WINDOW_SPACING); n++;
-    XtSetArg(args[n], XmNrightAttachment, XmATTACH_WIDGET); n++;
-    XtSetArg(args[n], XmNrightWidget, viewframe); n++;
-    XtSetArg(args[n], XmNrightOffset, WINDOW_SPACING); n++;
-    XtSetArg(args[n], XmNbottomAttachment, XmATTACH_OPPOSITE_WIDGET); n++;
-    XtSetArg(args[n], XmNbottomWidget, viewframe); n++;
-    XtSetArg(args[n], XmNlabelString, str); n++;
-    Widget showHidden = XmCreateToggleButton(form, "showHidden", args, n);
-    XtManageChild(showHidden);
-    XmStringFree(str);
-    XtAddCallback(showHidden, XmNvalueChangedCallback,
-                 (XtCallbackProc)filedialog_setshowhidden, &data);
-    
     XmString v0 = XmStringCreateLocalized("Icons");
     XmString v1 = XmStringCreateLocalized("List");
     XmString v2 = XmStringCreateLocalized("Detail");
     
     Widget menu = XmCreatePulldownMenu(viewframe, "menu", NULL, 0);
+    
     XtSetArg(args[0], XmNlabelString, v0);
-    Widget mitem0 = XmCreatePushButton(menu, "menuitem", args, 1);
+    XtSetArg(args[1], XmNpositionIndex, LastView == 0 ? 0 : 1);
+    Widget mitem0 = XmCreatePushButton(menu, "menuitem", args, 2);
     XtSetArg(args[0], XmNlabelString, v1);
-    Widget mitem1 = XmCreatePushButton(menu, "menuitem", args, 1);
+    XtSetArg(args[1], XmNpositionIndex, LastView == 1 ? 0 : 1);
+    Widget mitem1 = XmCreatePushButton(menu, "menuitem", args, 2);
     XtSetArg(args[0], XmNlabelString, v2);
-    Widget mitem2 = XmCreatePushButton(menu, "menuitem", args, 1);
+    XtSetArg(args[1], XmNpositionIndex, LastView == 2 ? 0 : 2);
+    Widget mitem2 = XmCreatePushButton(menu, "menuitem", args, 2);
     XtManageChild(mitem0);
     XtManageChild(mitem1);
     //XtManageChild(mitem2);
@@ -1300,7 +1319,7 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     XtSetArg(args[n], XmNleftWidget, goUp); n++;
     XtSetArg(args[n], XmNleftOffset, WINDOW_SPACING); n++;
     XtSetArg(args[n], XmNrightAttachment, XmATTACH_WIDGET); n++;
-    XtSetArg(args[n], XmNrightWidget, showHidden); n++;
+    XtSetArg(args[n], XmNrightWidget, viewframe); n++;
     XtSetArg(args[n], XmNrightOffset, WIDGET_SPACING); n++;
     XtSetArg(args[n], XmNshadowType, XmSHADOW_IN); n++;
     Widget pathBarFrame = XmCreateFrame(form, "pathbar_frame", args, n);
@@ -1311,6 +1330,66 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     XtManageChild(data.pathBar->widget);
     data.path = XmCreateTextField(form, "textfield", args, 0);
     
+    n = 0;
+    str = XmStringCreateLocalized("Filter");
+    XtSetArg(args[n], XmNleftAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNleftOffset, WINDOW_SPACING); n++;
+    XtSetArg(args[n], XmNtopAttachment, XmATTACH_WIDGET); n++;
+    XtSetArg(args[n], XmNtopWidget, pathBarFrame); n++;
+    XtSetArg(args[n], XmNtopOffset, WIDGET_SPACING); n++;
+    XtSetArg(args[n], XmNlabelString, str); n++;
+    Widget filterLabel = XmCreateLabel(form, "label", args, n);
+    XtManageChild(filterLabel);
+    XmStringFree(str);
+    
+    n = 0;
+    XtSetArg(args[n], XmNleftAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNleftOffset, WINDOW_SPACING); n++;
+    XtSetArg(args[n], XmNtopAttachment, XmATTACH_WIDGET); n++;
+    XtSetArg(args[n], XmNtopWidget, filterLabel); n++;
+    XtSetArg(args[n], XmNtopOffset, WIDGET_SPACING); n++;
+    XtSetArg(args[n], XmNrightAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNrightOffset, WINDOW_SPACING); n++;
+    Widget filterform = XmCreateForm(form, "filterform", args, n);
+    XtManageChild(filterform);
+    
+    n = 0;
+    str = XmStringCreateSimple("Show hidden files");
+    XtSetArg(args[n], XmNtopAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNrightAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNlabelString, str); n++;
+    Widget showHidden = XmCreateToggleButton(filterform, "showHidden", args, n);
+    XtManageChild(showHidden);
+    XmStringFree(str);
+    XtAddCallback(showHidden, XmNvalueChangedCallback,
+                 (XtCallbackProc)filedialog_setshowhidden, &data);
+    
+    n = 0;
+    str = XmStringCreateLocalized("Filter");
+    XtSetArg(args[n], XmNtopAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNlabelString, str); n++;
+    XtSetArg(args[n], XmNrightAttachment, XmATTACH_WIDGET); n++;
+    XtSetArg(args[n], XmNrightWidget, showHidden); n++;
+    Widget filterButton = XmCreatePushButton(filterform, "filedialog_filter", args, n);
+    XtManageChild(filterButton);
+    XmStringFree(str);
+    XtAddCallback(filterButton, XmNactivateCallback,
+                 (XtCallbackProc)filedialog_filter, &data);
+    
+    n = 0;
+    XtSetArg(args[n], XmNtopAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNleftAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNrightAttachment, XmATTACH_WIDGET); n++;
+    XtSetArg(args[n], XmNrightWidget, filterButton); n++;
+    XtSetArg(args[n], XmNrightOffset, WIDGET_SPACING); n++;
+    data.filter = XmCreateTextField(filterform, "filedialog_filter_textfield", args, n);
+    XtManageChild(data.filter);
+    XmTextFieldSetString(data.filter, "*");
+    XtAddCallback(data.filter, XmNactivateCallback,
+                 (XtCallbackProc)filedialog_filter, &data);
     
     /* lower part */
     n = 0;
@@ -1325,7 +1404,7 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     XtManageChild(buttons);
     
     n = 0;
-    str = XmStringCreateLocalized("Open");
+    str = XmStringCreateLocalized(type == FILEDIALOG_OPEN ? "Open" : "Save");
     XtSetArg(args[n], XmNtopAttachment, XmATTACH_FORM); n++;
     XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
     XtSetArg(args[n], XmNlabelString, str); n++;
@@ -1347,32 +1426,6 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     XmStringFree(str);
     XtAddCallback(cancelBtn, XmNactivateCallback,
                  (XtCallbackProc)filedialog_cancel, &data);
-    
-    n = 0;
-    str = XmStringCreateLocalized("Filter");
-    XtSetArg(args[n], XmNtopAttachment, XmATTACH_FORM); n++;
-    XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
-    XtSetArg(args[n], XmNlabelString, str); n++;
-    XtSetArg(args[n], XmNrightAttachment, XmATTACH_WIDGET); n++;
-    XtSetArg(args[n], XmNrightWidget, cancelBtn); n++;
-    Widget filterButton = XmCreatePushButton(buttons, "filedialog_filter", args, n);
-    XtManageChild(filterButton);
-    XmStringFree(str);
-    XtAddCallback(filterButton, XmNactivateCallback,
-                 (XtCallbackProc)filedialog_filter, &data);
-    
-    n = 0;
-    XtSetArg(args[n], XmNtopAttachment, XmATTACH_FORM); n++;
-    XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
-    XtSetArg(args[n], XmNleftAttachment, XmATTACH_WIDGET); n++;
-    XtSetArg(args[n], XmNleftWidget, okBtn); n++;
-    XtSetArg(args[n], XmNrightAttachment, XmATTACH_WIDGET); n++;
-    XtSetArg(args[n], XmNrightWidget, filterButton); n++;
-    data.filter = XmCreateTextField(buttons, "filedialog_filter_textfield", args, n);
-    XtManageChild(data.filter);
-    XmTextFieldSetString(data.filter, "*");
-    XtAddCallback(data.filter, XmNactivateCallback,
-                 (XtCallbackProc)filedialog_filter, &data);
     
     n = 0;
     XtSetArg(args[n], XmNbottomAttachment, XmATTACH_WIDGET); n++;
@@ -1542,7 +1595,7 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     n = 0;
     XtSetArg(args[n], XmNleftAttachment, XmATTACH_FORM); n++;
     XtSetArg(args[n], XmNtopAttachment, XmATTACH_WIDGET); n++;
-    XtSetArg(args[n], XmNtopWidget, data.pathBar->widget); n++;
+    XtSetArg(args[n], XmNtopWidget, filterform); n++;
     XtSetArg(args[n], XmNtopOffset, WIDGET_SPACING); n++;
     XtSetArg(args[n], XmNrightAttachment, XmATTACH_FORM); n++;
     XtSetArg(args[n], XmNbottomAttachment, XmATTACH_WIDGET); n++;
@@ -1582,7 +1635,7 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     XtSetArg(args[n], XmNspatialStyle, XmGRID); n++;
     XtSetArg(args[n], XmNspatialIncludeModel, XmAPPEND); n++;
     XtSetArg(args[n], XmNspatialResizeModel, XmGROW_MINOR); n++;
-    //XtSetArg(args[n], XmNlargeCellWidth, 200); n++;
+    XtSetArg(args[n], XmNlargeCellWidth, 150); n++;
     data.container = XmCreateContainer(scrollw, "table", args, n);
     XtManageChild(data.container);
     XtAddCallback(XtParent(data.container), XmNresizeCallback,
@@ -1627,6 +1680,11 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
             XmNdefaultActionCallback,
             (XtCallbackProc)dirlist_activate,
             &data); 
+    XtAddCallback(
+            data.dirlist,
+            XmNbrowseSelectionCallback,
+            (XtCallbackProc)dirlist_select,
+            &data);
     
     n = 0;
     XtSetArg(args[n], XmNrightAttachment, XmATTACH_FORM); n++;
@@ -1644,6 +1702,11 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
             XmNdefaultActionCallback,
             (XtCallbackProc)filelist_activate,
             &data); 
+    XtAddCallback(
+            data.filelist,
+            XmNbrowseSelectionCallback,
+            (XtCallbackProc)filelist_select,
+            &data);
     
     n = 0;
     str = XmStringCreateLocalized("Files");
@@ -1658,10 +1721,11 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     Widget lsFileLabel = XmCreateLabel(data.listform, "label", args, n);
     XtManageChild(lsFileLabel);
     XmStringFree(str);
-      
+    
+    Widget focus = NULL;
     switch(data.selectedview) {
-        case 0: XtManageChild(scrollw); break;
-        case 1: XtManageChild(data.listform); break;
+        case 0: XtManageChild(scrollw); focus = data.container; break;
+        case 1: XtManageChild(data.listform); focus = data.filelist; break;
         case 2: XtManageChild(data.grid); break;
     }
     
@@ -1672,7 +1736,9 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     PathBarSetPath(data.pathBar, defDir);
     
     /* event loop */
-    ManageDialogCenteredOnPointer(form);   
+    ManageDialogCenteredOnPointer(form);
+    
+    XmProcessTraversal(focus, XmTRAVERSE_CURRENT);
     
     XtAppContext app = XtWidgetToApplicationContext(dialog);
     while(!data.end && !XtAppGetExitFlag(app)) {
