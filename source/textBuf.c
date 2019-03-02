@@ -342,11 +342,11 @@ FcChar32 BufGetCharacter32(const textBuffer* buf, int pos, int *charlen)
     if(len == 1) {
         result = c;
     } else {
-        char utf8[4];
+        FcChar8 utf8[4];
         if(pos + len <= buf->gapStart) {
             memmove(utf8, buf->buf+pos, len);
         } else {
-            utf8[0] = c;
+            utf8[0] = (FcChar8)c;
             for(int i=1;i<len;i++) {
                 utf8[i] = BufGetCharacter(buf, pos+i);
             }
@@ -1249,7 +1249,6 @@ int BufCountDispChars(const textBuffer* buf, int lineStartPos,
 */
 int BufCountForwardDispChars(textBuffer *buf, int lineStartPos, int nChars)
 {
-    // TODO: unicode
     int pos, len, charCount = 0;
     char c;
     

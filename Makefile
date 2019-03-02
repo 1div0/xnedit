@@ -1,4 +1,5 @@
 SHELL=/bin/sh
+PREFIX=/usr
 #
 # Makefile for XNEdit text editor
 #
@@ -51,21 +52,34 @@ clean:
 
 realclean: clean
 	(cd doc;    $(MAKE) clean)
+#
+# install binaries and other resources to $(PREFIX)
+#
+INSTALL_FILES=source/xnedit source/xnc
+install: $(INSTALL_FILES)
+	mkdir -p $(PREFIX)/bin
+	mkdir -p $(PREFIX)/share/icons
+	mkdir -p $(PREFIX)/share/applications
+	rm -f $(PREFIX)/bin/xnedit
+	rm -f $(PREFIX)/bin/xnc
+	cp source/xnedit $(PREFIX)/bin/xnedit
+	cp source/xnc $(PREFIX)/bin/xnc
+	cp resources/desktop/xnedit.png $(PREFIX)/share/icons/xnedit.png
+	sed s:%PREFIX%:$(PREFIX):g resources/desktop/xnedit.desktop.template > $(PREFIX)/share/applications/xnedit.desktop
 
 #
 # The following is for creating binary packages of NEdit.
 #
-RELEASE=xnedit-0.9-`uname -s`-`uname -m`
-BINDIST-FILES=source/xnedit source/xnc README COPYRIGHT ReleaseNotes doc/nedit.doc doc/nedit.html doc/nedit.man doc/nc.man doc/faq.txt
+RELEASE=xnedit-1.0-`uname -s`-`uname -m`
+BINDIST-FILES=source/xnedit source/xnc README LICENSE ReleaseNotes doc/xnedit.txt doc/xnedit.html doc/xnedit.man doc/xnc.man doc/faq.txt resources/desktop/xnedit.desktop resources/desktop/xnedit.png
 
 dist-bin: $(BINDIST-FILES)
 	rm -rf $(RELEASE)
 	mkdir -p $(RELEASE)
 	cp $(BINDIST-FILES) $(RELEASE)/
-	strip $(RELEASE)/nedit $(RELEASE)/nc
-	chmod 555 $(RELEASE)/nedit $(RELEASE)/nc
+	strip $(RELEASE)/xnedit $(RELEASE)/xnc
+	chmod 555 $(RELEASE)/xnedit $(RELEASE)/xnc
 	tar cf $(RELEASE).tar $(RELEASE)
-	compress -c $(RELEASE).tar > $(RELEASE).tar.Z
 	-gzip -9 -c $(RELEASE).tar > $(RELEASE).tar.gz
 	-bzip2 -9 -c $(RELEASE).tar > $(RELEASE).tar.bz2
 	rm -rf $(RELEASE) $(RELEASE).tar

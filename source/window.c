@@ -199,6 +199,8 @@ static int updateGutterWidth(WindowInfo* window);
 static void deleteDocument(WindowInfo *window);
 static void cancelTimeOut(XtIntervalId *timer);
 
+static void WindowTakeFocus(Widget shell, WindowInfo *window, XtPointer d);
+
 /* From Xt, Shell.c, "BIGSIZE" */
 static const Dimension XT_IGNORE_PPOSITION = 32767;
 
@@ -226,6 +228,7 @@ WindowInfo *CreateWindow(const char *name, char *geometry, int iconic)
 
     /* Allocate some memory for the new window data structure */
     window = (WindowInfo *)NEditMalloc(sizeof(WindowInfo));
+    window->opened = False;
     
     /* initialize window structure */
     /* + Schwarzenberg: should a 
@@ -783,6 +786,17 @@ WindowInfo *CreateWindow(const char *name, char *geometry, int iconic)
     /* Make close command in window menu gracefully prompt for close */
     AddMotifCloseCallback(winShell, (XtCallbackProc)closeCB, window);
     
+    /* window open callback */
+    Atom wm_take_focus = XmInternAtom(
+            XtDisplay(winShell),
+            "WM_TAKE_FOCUS",
+            0);
+    XmAddWMProtocolCallback(
+            winShell,
+            wm_take_focus,
+            (XtCallbackProc)WindowTakeFocus,
+            window);
+    
     /* Make window resizing work in nice character heights */
     UpdateWMSizeHints(window);
     
@@ -855,7 +869,7 @@ static Widget addTab(Widget folder, const char *string)
     XtVaSetValues(tooltipLabel,
     	    XmNbackground, AllocateColor(tab, GetPrefTooltipBgColor()),
     	    XmNforeground, AllocateColor(tab, NEDIT_DEFAULT_FG),
-	    NULL);
+    	    NULL);
 
     /* put borders around tooltip. BubbleButton use 
        transientShellWidgetClass as tooltip shell, which
@@ -4798,4 +4812,9 @@ void SetEncoding(WindowInfo *window, const char *encoding)
     
     memcpy(window->encoding, encoding, len);
     window->encoding[len] = '\0';
+}
+
+static void WindowTakeFocus(Widget shell, WindowInfo *window, XtPointer d)
+{
+    window->opened = True;
 }

@@ -97,7 +97,7 @@
 #define MENU_WIDGET(w) (w)
 #endif
 
-#define PREF_FILE_VERSION "0.9"
+#define PREF_FILE_VERSION "6.0"
 
 /* New styles added in 5.2 for auto-upgrade */
 #define ADD_5_2_STYLES " Pointer:#660000:Bold\nRegex:#009944:Bold\nWarning:brown2:Italic"
@@ -314,7 +314,7 @@ static struct prefData {
     char serverName[MAXPATHLEN];/* server name for multiple servers per disp. */
     char bgMenuBtn[MAX_ACCEL_LEN]; /* X event description for triggering
     	    	    	    	      posting of background menu */
-    char fileVersion[6]; 	/* Version of nedit which wrote the .nedit
+    char fileVersion[16]; 	/* Version of nedit which wrote the .nedit
     				   file we're reading */
     int findReplaceUsesSelection; /* whether the find replace dialog is automatically
                                      loaded with the primary selection */
@@ -4130,50 +4130,6 @@ void ChooseFonts(WindowInfo *window, int forWindow)
     ManageDialogCenteredOnPointer(form);
 }
 
-static char* fontNameAddAttribute(
-        const char *name,
-        size_t len,
-        const char *attribute,
-        const char *value)
-{
-    size_t attributelen = strlen(attribute);
-    size_t valuelen = strlen(value);
-    size_t newlen = len + attributelen + valuelen + 4;
-    char *attr = NEditMalloc(attributelen+3);
-    char *newfont = NEditMalloc(newlen);
-    char *oldattr;
-    int i = len;
-    int b = 0;
-    int e = 0;
-    
-    /* check if the font name already has this attribute */
-    attr[0] = ':';
-    memcpy(attr+1, attribute, attributelen);
-    attr[attributelen+1] = '=';
-    attr[attributelen+2] = '\0';
-    oldattr = strstr(name, attr);
-    if(oldattr) {
-        b = (int)(oldattr - name)+1;
-        e = len;
-        for(i=b;i<len;i++) {
-            if(name[i] == ':') {
-                e = i;
-                break;
-            }
-        }
-    }
-    NEditFree(attr);
-    
-    if(b < len) {
-        if(b > 0 && name[b-1] == ':') b--;
-        snprintf(newfont, newlen, "%.*s%.*s:%s=%s", b, name, len-e, name+e, attribute, value);
-    } else {
-        snprintf(newfont, newlen, "%s:%s=%s", name, attribute, value);
-    }
-    
-    return newfont;
-}
-
 static void fillFromPrimaryCB(Widget w, XtPointer clientData,
     	XtPointer callData)
 {
@@ -4189,9 +4145,9 @@ static void fillFromPrimaryCB(Widget w, XtPointer clientData,
     primaryLen = strlen(primaryName);
     
     if(primaryLen > 0) {
-        italic = fontNameAddAttribute(primaryName, primaryLen, "slant", "italic");
-        bold = fontNameAddAttribute(primaryName, primaryLen, "weight", "bold");
-        bolditalic = fontNameAddAttribute(bold, strlen(bold), "slant", "italic");
+        italic = FontNameAddAttribute(primaryName, primaryLen, "slant", "italic");
+        bold = FontNameAddAttribute(primaryName, primaryLen, "weight", "bold");
+        bolditalic = FontNameAddAttribute(bold, strlen(bold), "slant", "italic");
         
         XmTextSetString(fd->boldW, bold);
         XmTextSetString(fd->italicW, italic);
@@ -5605,29 +5561,55 @@ static void migrateColor(XrmDatabase prefDB, XrmDatabase appDB,
  */
 static void migrateColorResources(XrmDatabase prefDB, XrmDatabase appDB)
 {
-    migrateColor(prefDB, appDB, APP_CLASS ".Text.Foreground",
-            APP_NAME ".text.foreground", TEXT_FG_COLOR, 
+    char classbuf[512];
+    char namebuf[512];
+    
+    snprintf(classbuf, 512, "%s%s", APP_CLASS, ".Text.Foreground");
+    snprintf(namebuf, 512, "%s%s", APP_NAME, ".text.foreground");
+    migrateColor(prefDB, appDB, classbuf,
+            namebuf, TEXT_FG_COLOR, 
             NEDIT_DEFAULT_FG);
-    migrateColor(prefDB, appDB, APP_CLASS ".Text.Background",
-            APP_NAME ".text.background", TEXT_BG_COLOR, 
+    
+    snprintf(classbuf, 512, "%s%s", APP_CLASS, ".Text.Background");
+    snprintf(namebuf, 512, "%s%s", APP_NAME, ".text.background");
+    migrateColor(prefDB, appDB, classbuf,
+            namebuf, TEXT_BG_COLOR, 
             NEDIT_DEFAULT_TEXT_BG);
-    migrateColor(prefDB, appDB, APP_CLASS ".Text.SelectForeground",
-            APP_NAME ".text.selectForeground", SELECT_FG_COLOR, 
+    
+    snprintf(classbuf, 512, "%s%s", APP_CLASS, ".Text.SelectForeground");
+    snprintf(namebuf, 512, "%s%s", APP_NAME, ".text.selectForeground");
+    migrateColor(prefDB, appDB, classbuf,
+            namebuf, SELECT_FG_COLOR, 
             NEDIT_DEFAULT_SEL_FG);
-    migrateColor(prefDB, appDB, APP_CLASS ".Text.SelectBackground",
-            APP_NAME ".text.selectBackground", SELECT_BG_COLOR, 
+    
+    snprintf(classbuf, 512, "%s%s", APP_CLASS, ".Text.SelectBackground");
+    snprintf(namebuf, 512, "%s%s", APP_NAME, ".text.selectBackground");
+    migrateColor(prefDB, appDB, classbuf,
+            namebuf, SELECT_BG_COLOR, 
             NEDIT_DEFAULT_SEL_BG);
-    migrateColor(prefDB, appDB, APP_CLASS ".Text.HighlightForeground",
-            APP_NAME ".text.highlightForeground", HILITE_FG_COLOR, 
+    
+    snprintf(classbuf, 512, "%s%s", APP_CLASS, ".Text.HighlightForeground");
+    snprintf(namebuf, 512, "%s%s", APP_NAME, ".text.highlightForeground");
+    migrateColor(prefDB, appDB, classbuf,
+            namebuf, HILITE_FG_COLOR, 
             NEDIT_DEFAULT_HI_FG);
-    migrateColor(prefDB, appDB, APP_CLASS ".Text.HighlightBackground",
-            APP_NAME ".text.highlightBackground", HILITE_BG_COLOR, 
+    
+    snprintf(classbuf, 512, "%s%s", APP_CLASS, ".Text.HighlightBackground");
+    snprintf(namebuf, 512, "%s%s", APP_NAME, ".text.highlightBackground");
+    migrateColor(prefDB, appDB, classbuf,
+            namebuf, HILITE_BG_COLOR, 
             NEDIT_DEFAULT_HI_BG);
-    migrateColor(prefDB, appDB, APP_CLASS ".Text.LineNumForeground",
-            APP_NAME ".text.lineNumForeground", LINENO_FG_COLOR, 
+    
+    snprintf(classbuf, 512, "%s%s", APP_CLASS, ".Text.LineNumForeground");
+    snprintf(namebuf, 512, "%s%s", APP_NAME, ".text.lineNumForeground");
+    migrateColor(prefDB, appDB, classbuf,
+            namebuf, LINENO_FG_COLOR, 
             NEDIT_DEFAULT_LINENO_FG);
-    migrateColor(prefDB, appDB, APP_CLASS ".Text.CursorForeground",
-            APP_NAME ".text.cursorForeground", CURSOR_FG_COLOR, 
+    
+    snprintf(classbuf, 512, "%s%s", APP_CLASS, ".Text.CursorForeground");
+    snprintf(namebuf, 512, "%s%s", APP_NAME, ".text.cursorForeground");
+    migrateColor(prefDB, appDB, classbuf,
+            namebuf, CURSOR_FG_COLOR, 
             NEDIT_DEFAULT_CURSOR_FG);
 }
 

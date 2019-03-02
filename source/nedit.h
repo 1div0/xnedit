@@ -76,7 +76,7 @@
 #define MAX_COLOR_LEN 30	/* maximum length for a color name */
 #define MAX_MARKS 36	    	/* max. # of bookmarks (one per letter & #) */
 #define MIN_LINE_NUM_COLS 4 	/* Min. # of columns in line number display */
-#define APP_NAME "xnedit"	/* application name for loading resources */
+#define APP_NAME GetAppName()   /* application name for loading resources */
 #define APP_CLASS "XNEdit"	/* application class for loading resources */
 
 /* The accumulated list of undo operations can potentially consume huge
@@ -569,6 +569,7 @@ typedef struct _WindowInfo {
     UserBGMenuCache  userBGMenuCache;   /* shell & macro menu are shared over all
                                            "tabbed" documents, while each document
                                            has its own background menu. */
+    Boolean opened;                     /* Set to true when the window is opened */
 } WindowInfo;
 
 extern WindowInfo *WindowList;
@@ -576,5 +577,7 @@ extern Display *TheDisplay;
 extern Widget TheAppShell;
 extern char *ArgV0;
 extern Boolean IsServer;
+
+char* GetAppName(void);
 
 #endif /* NEDIT_NEDIT_H_INCLUDED */

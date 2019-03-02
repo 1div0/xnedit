@@ -24,10 +24,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <Xm/XmAll.h>
+
 #include <Xft/Xft.h>
 #include <fontconfig/fontconfig.h>
 
-#include <Xm/XmAll.h>
 #include "nedit_malloc.h"
 #include "misc.h"
 
@@ -46,6 +47,8 @@ typedef struct FontSelector {
     Widget name;
     
     XftFont *font;
+    XftFont *bold;
+    XftFont *italic;
     XftDraw *draw;
     
     int end;
@@ -60,9 +63,31 @@ static void UpdatePreview(FontSelector *sel, const char *fontStr)
         return;
     }
     if(sel->font) {
-        XftFontClose(XtDisplay(sel->preview), sel->font);
+        XftFontClose(dp, sel->font);
     }
+    
+    size_t fontStrLen = strlen(fontStr);
+    char *boldFontStr = FontNameAddAttribute(fontStr, fontStrLen,
+                                             "weight", "bold");
+    char *italicFontStr = FontNameAddAttribute(fontStr, fontStrLen,
+                                               "slant", "italic");
+    
+    XftFont *boldFont = XftFontOpenName(dp, DefaultScreen(dp), boldFontStr);
+    XftFont *italicFont = XftFontOpenName(dp, DefaultScreen(dp), italicFontStr);
+    
+    NEditFree(boldFontStr);
+    NEditFree(italicFontStr);
+    
+    if(sel->bold) {
+        XftFontClose(dp, sel->bold);
+    }
+    if(sel->italic) {
+        XftFontClose(dp, sel->italic);
+    }
+    
     sel->font = font;
+    sel->bold = boldFont;
+    sel->italic = italicFont;
 }
 
 static void InitXftDraw(FontSelector *sel)
@@ -121,17 +146,53 @@ static void exposeFontPreview(Widget w, FontSelector *sel, XtPointer data)
             NULL);
     
     int fontHeight = sel->font->ascent + sel->font->descent;
-    int space = height - fontHeight;
     
+    int boldHeight = 0;
+    int italicHeight = 0;
+    int extraSpace = 0;
+    if(sel->bold) {
+        boldHeight = sel->bold->ascent + sel->bold->descent;
+        extraSpace += 5;
+    }
+    if(sel->italic) {
+        italicHeight = sel->italic->ascent + sel->italic->descent;
+        extraSpace += 5;
+    }
     
+    int space = height - fontHeight - boldHeight - italicHeight - extraSpace;
+    
+    int y = space/2;
     XftDrawStringUtf8(
             sel->draw,
             &color,
             sel->font,
             10,
-            space/2 + sel->font->ascent,
-            PREVIEW_STR,
+            y + sel->font->ascent,
+            (unsigned char*) PREVIEW_STR,
             sizeof(PREVIEW_STR)-1);
+    y += fontHeight + 5;
+    
+    if(sel->bold) {
+        XftDrawStringUtf8(
+            sel->draw,
+            &color,
+            sel->bold,
+            10,
+            y + sel->bold->ascent,
+            (unsigned char*) PREVIEW_STR,
+            sizeof(PREVIEW_STR)-1);
+        y += boldHeight + 5;
+    }
+    if(sel->italic) {
+        XftDrawStringUtf8(
+            sel->draw,
+            &color,
+            sel->italic,
+            10,
+            y + sel->italic->ascent,
+            (unsigned char*) PREVIEW_STR,
+            sizeof(PREVIEW_STR)-1);
+    }
 }
 
 static void UpdateFontList(FontSelector *sel, char *pattern)
@@ -172,9 +233,11 @@ static void UpdateFontList(FontSelector *sel, char *pattern)
     XtVaSetValues(sel->fontlist, XmNitems, items, XmNitemCount, nfound, NULL);
 }
 
-static XmString MatchFont(const char *name)
+static void MatchFont(const char *name, XmString *retName, XmString *retSize)
 {
-    XmString ret = NULL;
+    *retName = NULL;
+    *retSize = NULL;
+    
     FcPattern* pat = FcNameParse((const FcChar8*)name);
     
     FcConfigSubstitute(NULL, pat, FcMatchPattern);
@@ -182,15 +245,19 @@ static XmString MatchFont(const char *name)
     FcResult result;
     FcPattern* font = FcFontMatch(NULL, pat, &result);
     if(font) {
-        FcChar8* name = NULL;
-        if (FcPatternGetString(font, FC_FULLNAME, 0, &name) == FcResultMatch) {
-            ret = XmStringCreateSimple((char*)name);
+        FcChar8* nameStr = NULL;
+        double fontSize = 0;
+        if (FcPatternGetString(font, FC_FULLNAME, 0, &nameStr) == FcResultMatch) {
+            *retName = XmStringCreateSimple((char*)nameStr);
+        }
+        if(FcPatternGetDouble(font, FC_SIZE, 0, &fontSize) == FcResultMatch) {
+            char buf[8];
+            snprintf(buf, 8, "%d", (int)fontSize);
+            *retSize = XmStringCreateSimple(buf);
         }
         FcPatternDestroy(font);
     }
     FcPatternDestroy(pat);
-    
-    return ret;
 }
 
 static void CreateSizeList(Widget w)
@@ -297,10 +364,17 @@ static void cancel_callback(Widget w, FontSelector *sel, XtPointer data)
 static void FreeFontSelector(FontSelector *sel)
 {
     FcPatternDestroy(sel->filter);
+    Display *dp = XtDisplay(sel->preview);
     
     XftDrawDestroy(sel->draw);
     if(sel->font) {
-        XftFontClose(XtDisplay(sel->preview), sel->font);
+        XftFontClose(dp, sel->font);
+    }
+    if(sel->bold) {
+        XftFontClose(dp, sel->bold);
+    }
+    if(sel->italic) {
+        XftFontClose(dp, sel->italic);
     }
     if(sel->list) {
         FcFontSetDestroy(sel->list);
@@ -309,7 +383,7 @@ static void FreeFontSelector(FontSelector *sel)
     NEditFree(sel);
 }
 
-char *FontSel(Widget parent, const char *currFont)
+char *FontSel(Widget parent, const char *curFont)
 {
     Arg args[32];
     int n = 0;
@@ -403,7 +477,7 @@ char *FontSel(Widget parent, const char *currFont)
     n = 0;
     sel->preview = XmCreateDrawingArea(previewFrame, "fontpreview", args, n);
     Dimension w, h;
-    XtMakeResizeRequest(sel->preview, 10, 60, &w, &h);
+    XtMakeResizeRequest(sel->preview, 450, 180, &w, &h);
     XtManageChild(sel->preview);
     
     XtAddCallback(
@@ -483,13 +557,19 @@ char *FontSel(Widget parent, const char *currFont)
     XmStringFree(str);
     */
     
-    UpdatePreview(sel, currFont);
+    UpdatePreview(sel, curFont);
     
     UpdateFontList(sel, NULL);
-    XmString selection = MatchFont(currFont);
-    if(selection) {
-        XmListSelectItem(sel->fontlist, selection, 0);
-        XmStringFree(selection);
+    XmString fontSelection;
+    XmString sizeSelection;
+    MatchFont(curFont, &fontSelection, &sizeSelection);
+    if(fontSelection) {
+        XmListSelectItem(sel->fontlist, fontSelection, 0);
+        XmStringFree(fontSelection);
+    }
+    if(sizeSelection) {
+        XmListSelectItem(sel->size, sizeSelection, 0);
+        XmStringFree(sizeSelection);
     }
     
     ManageDialogCenteredOnPointer(form);
@@ -507,10 +587,54 @@ char *FontSel(Widget parent, const char *currFont)
         retStr = GetFontString(sel);
     }
     if(!retStr) {
-        retStr = NEditStrdup(currFont);
+        retStr = NEditStrdup(curFont);
     }
     
     FreeFontSelector(sel);
     return retStr;
 }
 
+
+char* FontNameAddAttribute(
+        const char *name,
+        size_t len,
+        const char *attribute,
+        const char *value)
+{
+    size_t attributelen = strlen(attribute);
+    size_t valuelen = strlen(value);
+    size_t newlen = len + attributelen + valuelen + 4;
+    char *attr = NEditMalloc(attributelen+3);
+    char *newfont = NEditMalloc(newlen);
+    char *oldattr;
+    int i = len;
+    int b = 0;
+    int e = 0;
+    
+    /* check if the font name already has this attribute */
+    attr[0] = ':';
+    memcpy(attr+1, attribute, attributelen);
+    attr[attributelen+1] = '=';
+    attr[attributelen+2] = '\0';
+    oldattr = strstr(name, attr);
+    if(oldattr) {
+        b = (int)(oldattr - name)+1;
+        e = len;
+        for(i=b;i<len;i++) {
+            if(name[i] == ':') {
+                e = i;
+                break;
+            }
+        }
+    }
+    NEditFree(attr);
+    
+    if(b < len) {
+        if(b > 0 && name[b-1] == ':') b--;
+        snprintf(newfont, newlen, "%.*s%.*s:%s=%s", b, name, len-e, name+e, attribute, value);
+    } else {
+        snprintf(newfont, newlen, "%s:%s=%s", name, attribute, value);
+    }
+    
+    return newfont;
+}
