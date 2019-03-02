@@ -65,15 +65,9 @@ html/xnedit.html: .version help.etx setext
 	      echo "** Unable to create html directory to hold XNEdit documentation"; \
 	  fi
 
-<<<<<<< HEAD
-nedit.doc: .version help.etx setext
-	@ echo "Creating XNEdit plain text documenation..."
-	@ ./setext -c NEDITDOC -v version="`cat .version`" help.etx nedit.doc
-=======
 xnedit.txt: .version help.etx setext
 	@ echo "Creating XNEdit plain text documenation..."
 	@ ./setext -c NEDITDOC -v version="`cat .version`" help.etx xnedit.txt
->>>>>>> cce61d4f749fac3e60afb580529db9d288fca9ae
 
 xnc.man: .version
 xnedit.man: .version
