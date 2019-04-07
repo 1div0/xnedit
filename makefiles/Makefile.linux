@@ -24,10 +24,10 @@ MAXX_HOME = /opt/MaXX
 endif
 
 # Indy 1.1.0
-MOTIF = $(MAXX_HOME)/OpenMotif-2.3.1
+#MOTIF = $(MAXX_HOME)/OpenMotif-2.3.1
 
-# Indigo 2.0
-#MOTIF = $(MAXX_HOME)/Motif-2.3.8
+# Indigo 2.0.1
+MOTIF = $(MAXX_HOME)/OpenMotif-2.3.8
 
 #
 # To evaluate an alternative layout for the Replace/Find dialog, add
