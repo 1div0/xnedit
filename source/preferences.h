@@ -209,7 +209,10 @@ void SetPrefOpenInTab(int state);
 Boolean GetPrefUndoModifiesSelection(void);
 Boolean GetPrefFocusOnRaise(void);
 Boolean GetPrefHonorSymlinks(void);
+Boolean GetAutoEnableXattr(void);
 Boolean GetPrefForceOSConversion(void);
 void SetPrefFocusOnRaise(Boolean);
+
+char* ChangeFontSize(const char *name, int newsize);
 
 #endif /* NEDIT_PREFERENCES_H_INCLUDED */

@@ -48,13 +48,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <limits.h>
-#ifdef VMS
-#include "../util/VMSparam.h"
-#else
 #ifndef __MVS__
 #include <sys/param.h>
 #endif
-#endif /*VMS*/
 
 #include <Xm/Xm.h>
 #include <Xm/Form.h>
@@ -421,8 +417,6 @@ static char *DefaultPatternSets[] = {
 	braces and parens:\"[(){}[\\]]\":::Keyword::D\n\
 	signs:\"[-+*/%=,.;:<>!|&^?]\":::Keyword::D\n\
 	error:\".\":::Flag::D}",
-#ifndef VMS
-/* The VAX C compiler cannot compile this definition */
     "JavaScript:1:0{\n\
 	DSComment:\"//\":\"$\"::Comment::\n\
 	MLComment:\"/\\*\":\"\\*/\"::Comment::\n\
@@ -443,7 +437,6 @@ static char *DefaultPatternSets[] = {
 	PredefinedMethods:\"<(abs|acos|alert|anchor|asin|atan|atan2|back|big|blink|blur|bold|ceil|charAt|clear|clearTimeout|click|close|confirm|cos|escape|eval|exp|fixed|floor|focus|fontcolor|fontsize|forward|getDate|getDay|getHours|getMinutes|getMonth|getSeconds|getTime|getTimezoneOffset|getYear|go|indexOf|isNaN|italics|javaEnabled|join|lastIndexOf|link|log|max|min|open|parse|parseFloat|parseInt|pow|prompt|random|reload|replace|reset|reverse|round|scroll|select|setDate|setHours|setMinutes|setMonth|setSeconds|setTimeout|setTime|setYear|sin|small|sort|split|sqrt|strike|sub|submit|substring|sup|taint|tan|toGMTString|toLocaleString|toLowerCase|toString|toUpperCase|unescape|untaint|UTC|write|writeln)>\":::Keyword::\n\
 	Properties:\"<(action|alinkColor|anchors|appCodeName|appName|appVersion|bgColor|border|checked|complete|cookie|defaultChecked|defaultSelected|defaultStatus|defaultValue|description|E|elements|enabledPlugin|encoding|fgColor|filename|forms|frames|hash|height|host|hostname|href|hspace|index|lastModified|length|linkColor|links|LN2|LN10|LOG2E|LOG10E|lowsrc|method|name|opener|options|parent|pathname|PI|port|protocol|prototype|referrer|search|selected|selectedIndex|self|SQRT1_2|SQRT2|src|status|target|text|title|top|type|URL|userAgent|value|vlinkColor|vspace|width|window)>\":::Storage Type::\n\
 	Operators:\"[= ; ->]|[/]|&|\\|\":::Preprocessor::}",
-#endif /*VMS*/
     "LaTeX:1:0{\n\
 	Comment:\"%\":\"$\"::Text Comment::\n\
 	Parameter:\"#[0-9]*\":::Text Arg::\n\
@@ -525,6 +518,24 @@ static char *DefaultPatternSets[] = {
 	define:\"^( *| [ \\t]*)<define>[ \\t]\":\"$\"::Keyword::D\n\
 	define var:\".[A-Za-z0-9_+]*\":\"$\"::Preprocessor:define:D\n\
 	define Ends:\"^( *| [ \\t]*)<endef>\":::Keyword::D}",
+    "Markdown:2:0{\n\
+	CodeBlock:\"^[ \\t]*```\":\"^[ \\t]*```\"::Text Escape::\n\
+	CodeBlock2:\"^[ \\t]*\\n(    |\t)\":\"^<|^[ \\t]*$\"::Text Escape::\n\
+	Blockquote:\"^[ \\t]*\\>\":\"$\"::Comment::\n\
+	Link1:\"\\[.*?\\](\\[.*?\\])\":::Preprocessor1::\n\
+	Link2:\"\\[.*?\\](\\(.*?\\))\":::Preprocessor1::\n\
+	Link3:\"^[ \\t]*\\[.*?\\]:(.*)\":::Preprocessor1::\n\
+	Link4:\"\\[.*?\\]\":::Preprocessor1::D\n\
+	Link1Part:\"\\1\":\"\"::Text Comment:Link1:C\n\
+	Link2Part:\"\\1\":\"\"::Text Comment:Link2:C\n\
+	Link3Part:\"\\1\":\"\"::Text Comment:Link3:C\n\
+	Header:\"^#.*\":::Header::\n\
+	HeaderLine:\".*\\n(-----*|=====*)\":::Header::\n\
+	Strong1:\"\\*\\*.*?\\*\\*\":::Strong::\n\
+	Strong2:\"__.*?__\":::Strong::\n\
+	Emphasis1:\"\\*.*?\\*\":::Emphasis::D\n\
+	Emphasis2:\"_.*?_\":::Emphasis::D\n\
+	Code:\"`\":\"`\":\"$\":Text Comment::}",
     "Matlab:1:0{\n\
 	Comment:\"%\":\"$\"::Comment::\n\
 	Comment in Octave:\"#\":\"$\"::Comment::\n\
@@ -2269,7 +2280,7 @@ static int updateHSList(void)
     
     /* Redisplay highlighted windows which use changed style(s) */
     for (window=WindowList; window!=NULL; window=window->next)
-    	UpdateHighlightStyles(window);
+    	UpdateHighlightStyles(window, True);
     
     /* Note that preferences have been changed */
     MarkPrefsChanged();

@@ -483,16 +483,14 @@ typedef struct _WindowInfo {
     char	italicFontName[MAX_FONT_LEN];
     char	boldFontName[MAX_FONT_LEN];
     char	boldItalicFontName[MAX_FONT_LEN];
-    XmFontList	fontList;		/* fontList for the primary font */
-    //XFontStruct *italicFontStruct;	/* fontStructs for highlighting fonts */
-    //XFontStruct *boldFontStruct;
-    //XFontStruct *boldItalicFontStruct;
     
-    NFont    *font;
-    NFont    *italicFont;
-    NFont    *boldFont;
-    NFont    *boldItalicFont;
+    NFont       *font;
+    NFont       *italicFont;
+    NFont       *boldFont;
+    NFont       *boldItalicFont;
     
+    Boolean     resizeOnFontChange;
+       
     XtIntervalId flashTimeoutID;	/* timer procedure id for getting rid
     					   of highlighted matching paren.  Non-
     					   zero val. means highlight is drawn */

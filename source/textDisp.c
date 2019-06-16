@@ -221,7 +221,7 @@ textDisp *TextDCreate(Widget widget, Widget hScrollBar, Widget vScrollBar,
     textD->visibility = VisibilityUnobscured;
     textD->hScrollBar = hScrollBar;
     textD->vScrollBar = vScrollBar;
-    textD->font = font;
+    textD->font = FontRef(font);
     textD->ascent = xftFont->ascent;
     textD->descent = xftFont->descent;
     /* TODO: think about renabling textD->fixedFontWidth */
@@ -266,6 +266,7 @@ textDisp *TextDCreate(Widget widget, Widget hScrollBar, Widget vScrollBar,
     textD->nLinesDeleted = 0;
     textD->modifyingTabDist = 0;
     textD->pointerHidden = False;
+    textD->disableRedisplay = False;
     textD->graphicsExposeQueue = NULL;
 
     /* Attach an event handler to the widget so we can know the visibility
@@ -341,6 +342,8 @@ void TextDInitXft(textDisp *textD) {
 */
 void TextDFree(textDisp *textD)
 {
+    FontUnref(textD->font);
+    
     BufRemoveModifyCB(textD->buffer, bufModifiedCB, textD);
     BufRemovePreDeleteCB(textD->buffer, bufPreDeleteCB, textD);
     releaseGC(textD->w, textD->gc);
@@ -453,7 +456,7 @@ void TextDSetColors(textDisp *textD, Pixel textFgP, Pixel textBgP,
 ** Change the (non highlight) font
 */
 void TextDSetFont(textDisp *textD, NFont *font)
-{
+{   
     XftFont *fontStruct = FontDefault(font);
     Display *display = XtDisplay(textD->w);
     int i, maxAscent = fontStruct->ascent, maxDescent = fontStruct->descent;
@@ -465,7 +468,9 @@ void TextDSetFont(textDisp *textD, NFont *font)
     NFont *styleFontList;
     
     /* If font size changes, cursor will be redrawn in a new position */
-    blankCursorProtrusions(textD);
+    if(!textD->disableRedisplay) {
+        blankCursorProtrusions(textD);
+    }
     
     /* If there is a (syntax highlighting) style table in use, find the new
        maximum font height for this text display */
@@ -485,8 +490,8 @@ void TextDSetFont(textDisp *textD, NFont *font)
     if (fontWidth != 0)
         fontWidth = -1;
     else {
-        for (i=0; i<textD->nStyles; i++) {
-            styleFont = FontDefault(textD->styleTable[i].font);
+        //for (i=0; i<textD->nStyles; i++) {
+            //styleFont = FontDefault(textD->styleTable[i].font);
             // TODO: fix
             /*
             if (styleFont != NULL && 
@@ -494,8 +499,9 @@ void TextDSetFont(textDisp *textD, NFont *font)
                     styleFont->max_bounds.width != styleFont->min_bounds.width))
                 fontWidth = -1;
             */
-            fontWidth = -1;
-        }
+            //fontWidth = -1;
+        //}
+        fontWidth = -1;
     }
     textD->fixedFontWidth = fontWidth;
     
@@ -507,7 +513,10 @@ void TextDSetFont(textDisp *textD, NFont *font)
        affected GCs (they are shared with other widgets, and if the primary
        font changes, must be re-allocated to change it). Unfortunately,
        this requres recovering all of the colors from the existing GCs */
-    textD->font = font;
+    
+    FontUnref(textD->font);
+    textD->font = FontRef(font); 
+    
     XGetGCValues(display, textD->gc, GCForeground|GCBackground, &values);
     fgPixel = values.foreground;
     bgPixel = values.background;
@@ -527,6 +536,10 @@ void TextDSetFont(textDisp *textD, NFont *font)
     releaseGC(textD->w, textD->lineNumGC);
     allocateFixedFontGCs(textD, NULL, bgPixel, fgPixel, selectFGPixel,
             selectBGPixel, highlightFGPixel, highlightBGPixel, lineNumFGPixel);
+    
+    if(textD->disableRedisplay) {
+        return;
+    }
     
     /* Do a full resize to force recalculation of font related parameters */
     width = textD->width;
@@ -4068,6 +4081,12 @@ NFont *FontCreate(Display *dp, FcPattern *pattern)
     pattern = FcPatternDuplicate(pattern);
     FcPattern *match = XftFontMatch(dp, DefaultScreen(dp), pattern, &result);
     
+    double sz = 0;
+    result = FcPatternGetDouble (pattern, FC_SIZE, 0, &sz);
+    if(result != FcResultMatch) {
+        FcPatternGetDouble (match, FC_SIZE, 0, &sz);
+    }
+    
     XftFont *defaultFont = XftFontOpenPattern(dp, match);
     if(!defaultFont) {
         FcPatternDestroy(match);
@@ -4078,6 +4097,8 @@ NFont *FontCreate(Display *dp, FcPattern *pattern)
     font->display = dp;
     font->pattern = pattern;
     font->fail = NULL;
+    font->size = sz;
+    font->ref = 1;
 
     NFontList *list = NEditMalloc(sizeof(NFontList));
     list->font = defaultFont;
@@ -4227,4 +4248,15 @@ void FontDestroy(NFont *f)
     
     FcPatternDestroy(f->pattern);
     NEditFree(f);
+}
+
+NFont *FontRef(NFont *font)  {
+    font->ref++;
+    return font;
+}
+
+void FontUnref(NFont *font) {
+    if(--font->ref == 0) {
+        FontDestroy(font);
+    }
 }

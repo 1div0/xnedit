@@ -205,6 +205,9 @@ static void WindowTakeFocus(Widget shell, WindowInfo *window, XtPointer d);
 /* From Xt, Shell.c, "BIGSIZE" */
 static const Dimension XT_IGNORE_PPOSITION = 32767;
 
+static Atom wm_take_focus;
+static int take_focus_atom_is_init = 0;
+
 /*
 ** Create a new editor window
 */
@@ -315,11 +318,12 @@ WindowInfo *CreateWindow(const char *name, char *geometry, int iconic)
     strcpy(window->boldFontName, GetPrefBoldFontName());
     strcpy(window->boldItalicFontName, GetPrefBoldItalicFontName());
     window->colorDialog = NULL;
-    window->fontList = GetPrefFontList();
-    window->font = GetPrefFont();
-    window->italicFont = GetPrefItalicFont();
-    window->boldFont = GetPrefBoldFont();
-    window->boldItalicFont = GetPrefBoldItalicFont();
+    window->font = FontRef(GetPrefFont());
+    window->italicFont = FontRef(GetPrefItalicFont());
+    window->boldFont = FontRef(GetPrefBoldFont());
+    window->boldItalicFont = FontRef(GetPrefBoldItalicFont());
+    window->resizeOnFontChange = True;
+    
     window->fontDialog = NULL;
     window->nMarks = 0;
     window->markTimeoutID = 0;
@@ -700,11 +704,6 @@ WindowInfo *CreateWindow(const char *name, char *geometry, int iconic)
     /* Manage the statsLineForm */
     if(window->showStats)
         XtManageChild(window->statsLineForm);
-    
-    /* If the fontList was NULL, use the magical default provided by Motif,
-       since it must have worked if we've gotten this far */
-    if (window->fontList == NULL)
-        XtVaGetValues(stats, XmNfontList, &window->fontList, NULL);
 
     /* Create the menu bar */
     menuBar = CreateMenuBar(mainWin, window);
@@ -797,10 +796,13 @@ WindowInfo *CreateWindow(const char *name, char *geometry, int iconic)
     AddMotifCloseCallback(winShell, (XtCallbackProc)closeCB, window);
     
     /* window open callback */
-    Atom wm_take_focus = XmInternAtom(
+    if(!take_focus_atom_is_init) {
+        wm_take_focus = XmInternAtom(
             XtDisplay(winShell),
             "WM_TAKE_FOCUS",
             0);
+        take_focus_atom_is_init = 1;
+    }
     XmAddWMProtocolCallback(
             winShell,
             wm_take_focus,
@@ -1135,6 +1137,12 @@ void CloseWindow(WindowInfo *window)
 	CloseAllPopupsFor(window->shell);
     	XtDestroyWidget(window->shell);
     }
+    
+    /* unref window fonts */
+    FontUnref(window->font);
+    FontUnref(window->boldFont);
+    FontUnref(window->italicFont);
+    FontUnref(window->boldItalicFont);
 
     /* deallocate the window data structure */
     NEditFree(window);
@@ -1816,6 +1824,11 @@ void SetFonts(WindowInfo *window, const char *fontName, const char *italicName,
     Dimension textHeight, newWindowWidth, newWindowHeight;
     textDisp *textD = ((TextWidget)window->textArea)->text.textD;
     
+    NFont *unrefFont = NULL;
+    NFont *unrefItalic = NULL;
+    NFont *unrefBold = NULL;
+    NFont *unrefBoldItalic = NULL;
+    
     /* Check which fonts have changed */
     primaryChanged = strcmp(fontName, window->fontName);
     if (strcmp(italicName, window->italicFontName)) highlightChanged = True;
@@ -1858,19 +1871,38 @@ void SetFonts(WindowInfo *window, const char *fontName, const char *italicName,
             //        NULL);
             printf("implement fallback font\n");
         } else {
-            //window->fontList = XmFontListCreate(font, XmSTRING_DEFAULT_CHARSET);
+            unrefFont = window->font;
             window->font = font;
         }
     }
     if (highlightChanged) {
-        strcpy(window->italicFontName, italicName);
-        window->italicFont = FontFromName(TheDisplay, italicName);
-        strcpy(window->boldFontName, boldName);
-        window->boldFont = FontFromName(TheDisplay, boldName);
-        strcpy(window->boldItalicFontName, boldItalicName);
-        window->boldItalicFont = FontFromName(TheDisplay, boldItalicName);
+        NFont *newitalic = FontFromName(TheDisplay, italicName);
+        if(newitalic) {
+            strcpy(window->italicFontName, italicName);
+            unrefItalic = window->italicFont; // unref later
+            window->italicFont = newitalic;
+        }
+
+        NFont *newbold = FontFromName(TheDisplay, boldName);
+        if(newbold) {
+            strcpy(window->boldFontName, boldName);
+            unrefBold = window->boldFont; // unref later
+            window->boldFont = newbold;
+        }
+        
+        NFont *newbolditalic = FontFromName(TheDisplay, boldItalicName);
+        if(newbolditalic) {
+            strcpy(window->boldItalicFontName, boldItalicName);
+            unrefBoldItalic = window->boldItalicFont;
+            window->boldItalicFont = newbolditalic;
+        }
     }
 
+    /* Change the highlight fonts, even if they didn't change, because
+       primary font is read through the style table for syntax highlighting */
+    if (window->highlightData != NULL)
+        UpdateHighlightStyles(window, False);    
+    
     /* Change the primary font in all the widgets */
     if (primaryChanged) {
         //font = GetDefaultFontStruct(TheDisplay, window->fontList);
@@ -1881,30 +1913,36 @@ void SetFonts(WindowInfo *window, const char *fontName, const char *italicName,
         }
     }
     
-    /* Change the highlight fonts, even if they didn't change, because
-       primary font is read through the style table for syntax highlighting */
-    if (window->highlightData != NULL)
-        UpdateHighlightStyles(window);
-        
-    /* Change the window manager size hints. 
-       Note: this has to be done _before_ we set the new sizes. ICCCM2
-       compliant window managers (such as fvwm2) would otherwise resize
-       the window twice: once because of the new sizes requested, and once
-       because of the new size increments, resulting in an overshoot. */
-    UpdateWMSizeHints(window);
+    /* unref highlight fonts */
+    if(unrefFont)
+        //FontUnref(unrefFont);
+    if(unrefItalic)
+        FontUnref(unrefItalic);
+    if(unrefBold)
+        FontUnref(unrefBold);
+    if(unrefBoldItalic)
+        FontUnref(unrefBoldItalic);
     
-    /* Use the information from the old window to re-size the window to a
-       size appropriate for the new font, but only do so if there's only
-       _one_ document in the window, in order to avoid growing-window bug */
-    if (NDocuments(window) == 1) {
-        // TODO: convert to new font
-	fontWidth = GetDefaultFontStruct(TheDisplay, window->fontList)->max_bounds.width;
-	fontHeight = textD->ascent + textD->descent;
-	newWindowWidth = (oldTextWidth*fontWidth) / oldFontWidth + borderWidth;
-	newWindowHeight = (oldTextHeight*fontHeight) / oldFontHeight + 
-	        borderHeight;
-	XtVaSetValues(window->shell, XmNwidth, newWindowWidth, XmNheight,
-        	newWindowHeight, NULL);
+    if(window->resizeOnFontChange) {
+        /* Change the window manager size hints. 
+            Note: this has to be done _before_ we set the new sizes. ICCCM2
+            compliant window managers (such as fvwm2) would otherwise resize
+            the window twice: once because of the new sizes requested, and once
+            because of the new size increments, resulting in an overshoot. */
+        UpdateWMSizeHints(window);
+
+        /* Use the information from the old window to re-size the window to a
+            size appropriate for the new font, but only do so if there's only
+            _one_ document in the window, in order to avoid growing-window bug */
+        if (NDocuments(window) == 1) {
+            fontWidth = window->font->fonts->font->max_advance_width;
+            fontHeight = textD->ascent + textD->descent;
+            newWindowWidth = (oldTextWidth*fontWidth) / oldFontWidth + borderWidth;
+            newWindowHeight = (oldTextHeight*fontHeight) / oldFontHeight + 
+                    borderHeight;
+            XtVaSetValues(window->shell, XmNwidth, newWindowWidth, XmNheight,
+                    newWindowHeight, NULL);
+        }
     }
     
     /* Change the minimum pane height */
@@ -1955,7 +1993,7 @@ void SetColors(WindowInfo *window, const char *textFg, const char *textBg,
     
     /* Redo any syntax highlighting */
     if (window->highlightData != NULL)
-        UpdateHighlightStyles(window);
+        UpdateHighlightStyles(window, True);
 }
 
 /*
@@ -3337,6 +3375,16 @@ WindowInfo* CreateDocument(WindowInfo* shellWindow, const char* name)
     window->fileFormat = UNIX_FILE_FORMAT;
     window->lastModTime = 0;
     strcpy(window->filename, name);
+    
+    window->encoding[0] = '\0';
+    char *default_encoding = nl_langinfo(CODESET);
+    if(default_encoding) {
+        size_t defenc_len = strlen(default_encoding);
+        if(strlen(default_encoding) < MAX_ENCODING_LENGTH) {
+            memcpy(window->encoding, default_encoding, defenc_len+1);
+        }
+    }
+    
     window->undo = NULL;
     window->redo = NULL;
     window->nPanes = 0;
@@ -3374,10 +3422,10 @@ WindowInfo* CreateDocument(WindowInfo* shellWindow, const char* name)
     strcpy(window->boldFontName, GetPrefBoldFontName());
     strcpy(window->boldItalicFontName, GetPrefBoldItalicFontName());
     window->colorDialog = NULL;
-    window->fontList = GetPrefFontList();
-    window->italicFont = GetPrefItalicFont();
-    window->boldFont = GetPrefBoldFont();
-    window->boldItalicFont = GetPrefBoldItalicFont();
+    window->font = FontRef(GetPrefFont());
+    window->italicFont = FontRef(GetPrefItalicFont());
+    window->boldFont = FontRef(GetPrefBoldFont());
+    window->boldItalicFont = FontRef(GetPrefBoldItalicFont());
     window->fontDialog = NULL;
     window->nMarks = 0;
     window->markTimeoutID = 0;
@@ -3399,10 +3447,6 @@ WindowInfo* CreateDocument(WindowInfo* shellWindow, const char* name)
     window->bgMenuRedoItem = NULL;
     window->device = 0;
     window->inode = 0;
-
-    if (window->fontList == NULL)
-        XtVaGetValues(shellWindow->statsLine, XmNfontList, 
-    	    	&window->fontList,NULL);
 
     getTextPaneDimension(shellWindow, &nRows, &nCols);
     
@@ -4299,6 +4343,7 @@ static void cloneDocument(WindowInfo *window, WindowInfo *orgWin)
     
     strcpy(window->path, orgWin->path);
     strcpy(window->filename, orgWin->filename);
+    strcpy(window->encoding, orgWin->encoding);
 
     ShowLineNumbers(window, orgWin->showLineNumbers);
 
@@ -4372,7 +4417,6 @@ static void cloneDocument(WindowInfo *window, WindowInfo *orgWin)
     strcpy(window->italicFontName, orgWin->italicFontName);
     strcpy(window->boldFontName, orgWin->boldFontName);
     strcpy(window->boldItalicFontName, orgWin->boldItalicFontName);
-    window->fontList = orgWin->fontList;
     window->italicFontStruct = orgWin->italicFontStruct;
     window->boldFontStruct = orgWin->boldFontStruct;
     window->boldItalicFontStruct = orgWin->boldItalicFontStruct;
@@ -4827,4 +4871,10 @@ void SetEncoding(WindowInfo *window, const char *encoding)
 static void WindowTakeFocus(Widget shell, WindowInfo *window, XtPointer d)
 {
     window->opened = True;
+    
+    XmRemoveWMProtocolCallback(
+            shell,
+            wm_take_focus,
+            (XtCallbackProc)WindowTakeFocus,
+            window);
 }

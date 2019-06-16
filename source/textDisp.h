@@ -58,6 +58,8 @@ struct NFont {
     NCharSetList *fail;
     Display *display;
     FcPattern *pattern;
+    double size;
+    unsigned int ref;
 };
 
 typedef struct {
@@ -184,6 +186,7 @@ typedef struct _textDisp {
     					   modified */
     Boolean pointerHidden;              /* true if the mouse pointer is 
                                            hidden */
+    Boolean disableRedisplay;
     graphicExposeTranslationEntry *graphicsExposeQueue;
 } textDisp;
 
@@ -258,6 +261,8 @@ XftFont *FontDefault(NFont *f);
 void FontAddFail(NFont *f, FcCharSet *c);
 XftFont *FindFont(NFont *f, FcChar32 c);
 void FontDestroy(NFont *f);
+NFont *FontRef(NFont *font);
+void FontUnref(NFont *font);
 
 XftColor PixelToColor(Widget w, Pixel p);
 XftColor RGBToColor(short r, short g, short b);

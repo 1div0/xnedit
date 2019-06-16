@@ -62,14 +62,10 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/stat.h>
-#ifdef VMS
-#include "../util/VMSparam.h"
-#else
 #ifndef __MVS__
 #include <sys/param.h>
 #endif
 #include "../util/clearcase.h"
-#endif /*VMS*/
 
 #include <Xm/Xm.h>
 #include <Xm/SelectioB.h>
@@ -97,10 +93,13 @@
 #define MENU_WIDGET(w) (w)
 #endif
 
-#define PREF_FILE_VERSION "6.0"
+#define PREF_FILE_VERSION "6.1"
 
 /* New styles added in 5.2 for auto-upgrade */
-#define ADD_5_2_STYLES " Pointer:#660000:Bold\nRegex:#009944:Bold\nWarning:brown2:Italic"
+#define ADD_5_2_STYLES " Pointer:#660000:Bold\nRegex:#009944:Bold\nWarning:brown2:Italic\n"
+
+/* New Styles added in 6.1 */
+#define ADD_6_1_STYLES " Emphasis:black:Italic\nStrong:black:Bold\nHeader:brown:Bold\n"
 
 /* maximum number of word delimiters allowed (256 allows whole character set) */
 #define MAX_WORD_DELIMITERS 256
@@ -286,10 +285,6 @@ static struct prefData {
     char boldFontString[MAX_FONT_LEN];
     char italicFontString[MAX_FONT_LEN];
     char boldItalicFontString[MAX_FONT_LEN];
-    XmFontList fontList;	/* XmFontLists corresp. to above named fonts */
-    XFontStruct *boldFontStruct;
-    XFontStruct *italicFontStruct;
-    XFontStruct *boldItalicFontStruct;
     
     NFont *font;
     NFont *boldFont;
@@ -327,9 +322,10 @@ static struct prefData {
     char tooltipBgColor[MAX_COLOR_LEN];
     int  undoModifiesSelection;
     int  focusOnRaise;
-    Boolean honorSymlinks;
+    int honorSymlinks;
     int truncSubstitution;
-    Boolean forceOSConversion;
+    int forceOSConversion;
+    int autoEnableXattr;
 } PrefData;
 
 /* Temporary storage for preferences strings which are discarded after being
@@ -350,7 +346,6 @@ static struct {
 static PrefDescripRec PrefDescrip[] = {
     {"fileVersion", "FileVersion" , PREF_STRING, "", PrefData.fileVersion,
       (void *)sizeof(PrefData.fileVersion), True},
-#ifndef VMS
 #ifdef linux
     {"shellCommands", "ShellCommands", PREF_ALLOC_STRING, "spell:Alt+B:s:EX:\n\
     cat>spellTmp; xterm -e ispell -x spellTmp; cat spellTmp; rm spellTmp\n\
@@ -372,7 +367,6 @@ static PrefDescripRec PrefDescrip[] = {
     expand::p:EX:\nexpand\nunexpand::u:EX:\nunexpand\n",
     &TempStringPrefs.shellCmds, NULL, True},
 #endif /* linux, __FreeBSD__ */
-#endif /* VMS */
     {"macroCommands", "MacroCommands", PREF_ALLOC_STRING,
 	"Complete Word:Alt+D::: {\n\
 		# This macro attempts to complete the current word by\n\
@@ -684,39 +678,6 @@ static PrefDescripRec PrefDescrip[] = {
 	Copy:::R: {\ncopy_clipboard()\n}\n\
 	Paste:::: {\npaste_clipboard()\n}", &TempStringPrefs.bgMenuCmds,
 	NULL, True},
-#ifdef VMS
-/* The VAX compiler can't compile Java-Script's definition in highlightData.c */
-    {"highlightPatterns", "HighlightPatterns", PREF_ALLOC_STRING,
-       "Ada:Default\n\
-        Awk:Default\n\
-        C++:Default\n\
-        C:Default\n\
-        CSS:Default\n\
-        Csh:Default\n\
-        Fortran:Default\n\
-        Java:Default\n\
-        LaTeX:Default\n\
-        Lex:Default\n\
-        Makefile:Default\n\
-        Matlab:Default\n\
-        NEdit Macro:Default\n\
-        Pascal:Default\n\
-        Perl:Default\n\
-        PostScript:Default\n\
-        Python:Default\n\
-        Regex:Default\n\
-        SGML HTML:Default\n\
-        SQL:Default\n\
-        Sh Ksh Bash:Default\n\
-        Tcl:Default\n\
-        VHDL:Default\n\
-        Verilog:Default\n\
-        XML:Default\n\
-        X Resources:Default\n\
-        Yacc:Default",
-        &TempStringPrefs.highlight, NULL, True},
-    {"languageModes", "LanguageModes", PREF_ALLOC_STRING,
-#else
     {"highlightPatterns", "HighlightPatterns", PREF_ALLOC_STRING,
        "Ada:Default\n\
         Awk:Default\n\
@@ -730,6 +691,7 @@ static PrefDescripRec PrefDescrip[] = {
         LaTeX:Default\n\
         Lex:Default\n\
         Makefile:Default\n\
+        Markdown:Default\n\
         Matlab:Default\n\
         NEdit Macro:Default\n\
         Pascal:Default\n\
@@ -748,38 +710,6 @@ static PrefDescripRec PrefDescrip[] = {
         Yacc:Default",
         &TempStringPrefs.highlight, NULL, True},
     {"languageModes", "LanguageModes", PREF_ALLOC_STRING,
-#endif /*VMS*/
-#ifdef VMS
-/*  TODO: Some tests indicate that these have to be upper case, but what about
-    the PostScript pattern then? How does VMS handle caseness anyway?  */
-       "Ada:.ADA .AD .ADS .ADB .A:::::::\n\
-        Awk:.AWK:::::::\n\
-        C++:.CC .HH .C .H .I .CXX .HXX .CPP::::::\".,/\\`'!|@#%^&*()-=+{}[]\"\":;<>?~\":\n\
-        C:.C .H::::::\".,/\\`'!|@#%^&*()-=+{}[]\"\":;<>?~\":\n\
-        CSS:CSS::Auto:None:::\".,/\\`'!|@#%^&*()=+{}[]\"\":;<>?~\":\n\
-        Csh:.CSH .CSHRC .TCSHRC .LOGIN .LOGOUT:\"^[ \\t]*#[ \\t]*![ \\t]*/bin/t?csh\"::::::\n\
-        Fortran:.F .F77 .FOR:::::::\n\
-        Java:.JAVA:::::::\n\
-        LaTeX:.TEX .STY .CLS .LTX .INS .CLO .FD:::::::\n\
-        Lex:.LEX:::::::\n\
-        Makefile:MAKEFILE:::None:8:8::\n\
-        Matlab:.M .OCT .SCI:::::::\n\
-        NEdit Macro:.NM .NEDITMACRO:::::::\n\
-        Pascal:.PAS .P .INT:::::::\n\
-        Perl:.PL .PM .P5:\"^[ \\t]*#[ \\t]*!.*perl\":Auto:None:::\".,/\\\\`'!$@#%^&*()-=+{}[]\"\":;<>?~|\":\n\
-        PostScript:.ps .PS .eps .EPS .epsf .epsi:\"^%!\":::::\"/%(){}[]<>\":\n\
-        Python:.PY:\"^#!.*python\":Auto:None:::\"!\"\"#$%&'()*+,-./:;<=>?@[\\\\]^`{|}~\":\n\
-        Regex:.REG .REGEX:\"\\(\\?[:#=!iInN].+\\)\":None:Continuous::::\n\
-        SGML HTML:.SGML .SGM .HTML .HTM:\"\\<[Hh][Tt][Mm][Ll]\\>\"::::::\n\
-        SQL:.SQL:::::::\n\
-        Sh Ksh Bash:.SH .BASH .KSH .PROFILE .BASHRC .BASH_LOGOUT .BASH_LOGIN .BASH_PROFILE:\"^[ \\t]*#[ \\t]*![ \\t]*/.*bin/(bash|ksh|sh|zsh)\"::::::\n\
-        Tcl:.TCL::Smart:None::::\n\
-        VHDL:.VHD .VHDL .VDL:::::::\n\
-        Verilog:.V:::::::\n\
-        XML:.XML .XSL .DTD:\"\\<(?i\\?xml|!doctype)\"::None:::\"<>/=\"\"'()+*?|\":\n\
-        X Resources:.XRESOURCES .XDEFAULTS .NEDIT .PATS NEDIT.RC:\"^[!#].*([Aa]pp|[Xx]).*[Dd]efaults\"::::::\n\
-        Yacc:.Y::::::\".,/\\`'!|@#%^&*()-=+{}[]\"\":;<>?~\":",
-#else
        "Ada:.ada .ad .ads .adb .a:::::::\n\
         Awk:.awk:::::::\n\
         C++:.cc .hh .C .H .i .cxx .hxx .cpp .c++::::::\".,/\\`'!|@#%^&*()-=+{}[]\"\":;<>?~\":\n\
@@ -792,6 +722,7 @@ static PrefDescripRec PrefDescrip[] = {
         LaTeX:.tex .sty .cls .ltx .ins .clo .fd:::::::\n\
         Lex:.lex:::::::\n\
         Makefile:Makefile makefile .gmk:::None:8:8::\n\
+        Markdown:.md .markdown .mdtxt .mdtext:::::::\n\
         Matlab:.m .oct .sci:::::::\n\
         NEdit Macro:.nm .neditmacro:::::::\n\
         Pascal:.pas .p .int:::::::\n\
@@ -808,7 +739,6 @@ static PrefDescripRec PrefDescrip[] = {
         XML:.xml .xsl .dtd:\"\\<(?i\\?xml|!doctype)\"::None:::\"<>/=\"\"'()+*?|\":\n\
         X Resources:.Xresources .Xdefaults .nedit .pats nedit.rc:\"^[!#].*([Aa]pp|[Xx]).*[Dd]efaults\"::::::\n\
         Yacc:.y::::::\".,/\\`'!|@#%^&*()-=+{}[]\"\":;<>?~\":",
-#endif
 	&TempStringPrefs.language, NULL, True},
     {"styles", "Styles", PREF_ALLOC_STRING, "Plain:black:Plain\n\
     	Comment:gray20:Italic\n\
@@ -840,7 +770,8 @@ static PrefDescripRec PrefDescrip[] = {
 	Text Arg2:RoyalBlue4:Plain\n\
     	Text Escape:gray30:Bold\n\
 	LaTeX Math:darkGreen:Plain\n"
-        ADD_5_2_STYLES,
+        ADD_5_2_STYLES
+        ADD_6_1_STYLES,
 	&TempStringPrefs.styles, NULL, True},
     {"smartIndentInit", "SmartIndentInit", PREF_ALLOC_STRING,
         "C:Default\n\
@@ -1078,7 +1009,9 @@ static PrefDescripRec PrefDescrip[] = {
     {"truncSubstitution", "TruncSubstitution", PREF_ENUM, "Fail",
             &PrefData.truncSubstitution, TruncSubstitutionModes, False},
     {"honorSymlinks", "HonorSymlinks", PREF_BOOLEAN, "True",
-            &PrefData.honorSymlinks, NULL, False}
+            &PrefData.honorSymlinks, NULL, False},
+    {"autoEnableXattr", "AutoEnableXattr", PREF_BOOLEAN, "True",
+            &PrefData.autoEnableXattr, NULL, False}
 };
 
 static XrmOptionDescRec OpTable[] = {
@@ -1237,6 +1170,7 @@ static void updateShellCmdsTo5dot3(void);
 static void updateShellCmdsTo5dot4(void);
 static void updateMacroCmdsTo5dot5(void);
 static void updatePatternsTo5dot6(void);
+static void updatePatternsTo6dot1(void);
 static void updateMacroCmdsTo5dot6(void);
 static void migrateColorResources(XrmDatabase prefDB, XrmDatabase appDB);
 static void spliceString(char **intoString, const char *insertString, const char *atExpr);
@@ -1298,6 +1232,10 @@ void RestoreNEditPrefs(XrmDatabase prefDB, XrmDatabase appDB)
             }
         }
     }
+    
+    if (PrefData.prefFileRead && fileVer < 6001) {
+        updatePatternsTo6dot1();
+    }
 
     /* Note that we don't care about unreleased file versions.  Anyone
        who is running a CVS or alpha version of NEdit is resposnbile
@@ -1340,13 +1278,11 @@ static void translatePrefFormats(int convertOld, int fileVer)
 
     /* Parse the strings which represent types which are not decoded by
        the standard resource manager routines */
-#ifndef VMS
     if (TempStringPrefs.shellCmds != NULL) {
 	LoadShellCmdsString(TempStringPrefs.shellCmds);
 	NEditFree(TempStringPrefs.shellCmds);
 	TempStringPrefs.shellCmds = NULL;
     }
-#endif /* VMS */
     if (TempStringPrefs.macroCmds != NULL) {
 	LoadMacroCmdsString(TempStringPrefs.macroCmds);
     	NEditFree(TempStringPrefs.macroCmds);
@@ -1382,19 +1318,6 @@ static void translatePrefFormats(int convertOld, int fileVer)
 	NEditFree(TempStringPrefs.smartIndentCommon);
 	TempStringPrefs.smartIndentCommon = NULL;
     }
-    
-    /* translate the font names into fontLists suitable for the text widget */
-    font = XLoadQueryFont(TheDisplay, PrefData.fontString);
-    PrefData.fontList = font==NULL ? NULL :
-	    XmFontListCreate(font, XmSTRING_DEFAULT_CHARSET);
-    /*
-    PrefData.boldFontStruct = XLoadQueryFont(TheDisplay,
-    	    PrefData.boldFontString);
-    PrefData.italicFontStruct = XLoadQueryFont(TheDisplay,
-    	    PrefData.italicFontString);
-    PrefData.boldItalicFontStruct = XLoadQueryFont(TheDisplay,
-    	    PrefData.boldItalicFontString);
-    */
     
     PrefData.font = FontFromName(TheDisplay, PrefData.fontString);
     PrefData.boldFont = FontFromName(TheDisplay, PrefData.boldFontString);
@@ -1458,9 +1381,7 @@ void SaveNEditPrefs(Widget parent, int quietly)
     /*  Write the more dynamic settings into TempStringPrefs.
         These locations are set in PrefDescrip, so this is where
         SavePreferences() will look for them.  */
-#ifndef VMS
     TempStringPrefs.shellCmds = WriteShellCmdsString();
-#endif /* VMS */
     TempStringPrefs.macroCmds = WriteMacroCmdsString();
     TempStringPrefs.bgMenuCmds = WriteBGMenuCmdsString();
     TempStringPrefs.highlight = WriteHighlightString();
@@ -1477,9 +1398,7 @@ void SaveNEditPrefs(Widget parent, int quietly)
                 "Unable to save preferences in %s", "OK", prefFileName);
     }
 
-#ifndef VMS
     NEditFree(TempStringPrefs.shellCmds);
-#endif /* VMS */
     NEditFree(TempStringPrefs.macroCmds);
     NEditFree(TempStringPrefs.bgMenuCmds);
     NEditFree(TempStringPrefs.highlight);
@@ -2006,6 +1925,7 @@ void SetPrefColorName(int index, const char *name)
 void SetPrefFont(char *fontName)
 {
     setStringPref(PrefData.fontString, fontName);
+    FontUnref(PrefData.font);
     PrefData.font = FontFromName(TheDisplay, fontName);
 }
 
@@ -2013,17 +1933,20 @@ void SetPrefBoldFont(char *fontName)
 {
     
     setStringPref(PrefData.boldFontString, fontName);
+    FontUnref(PrefData.boldFont);
     PrefData.boldFont = FontFromName(TheDisplay, fontName);
 }
 
 void SetPrefItalicFont(char *fontName)
 {
     setStringPref(PrefData.italicFontString, fontName);
+    FontUnref(PrefData.italicFont);
     PrefData.italicFont = FontFromName(TheDisplay, fontName);
 }
 void SetPrefBoldItalicFont(char *fontName)
 {
     setStringPref(PrefData.boldItalicFontString, fontName);
+    FontUnref(PrefData.boldItalicFont);
     PrefData.boldItalicFont = FontFromName(TheDisplay, fontName);
 }
 
@@ -2045,11 +1968,6 @@ char *GetPrefItalicFontName(void)
 char *GetPrefBoldItalicFontName(void)
 {
     return PrefData.boldItalicFontString;
-}
-
-XmFontList GetPrefFontList(void)
-{
-    return PrefData.fontList;
 }
 
 NFont *GetPrefFont(void)
@@ -2167,7 +2085,12 @@ Boolean GetPrefForceOSConversion(void)
 
 Boolean GetPrefHonorSymlinks(void)
 {
-    return PrefData.honorSymlinks;
+    return (Boolean)PrefData.honorSymlinks;
+}
+
+Boolean GetAutoEnableXattr(void)
+{
+    return (Boolean)PrefData.autoEnableXattr;
 }
 
 int GetPrefOverrideVirtKeyBindings(void)
@@ -4520,26 +4443,15 @@ static int matchLanguageMode(WindowInfo *window)
        which gets appended after the file extension, and therefore must be
        stripped off to recognize the extension to make ClearCase users happy) */
     fileNameLen = strlen(window->filename);
-#ifdef VMS
-    if (strchr(window->filename, ';') != NULL)
-    	fileNameLen = strchr(window->filename, ';') - window->filename;
-#else
     if ((versionExtendedPath = GetClearCaseVersionExtendedPath(window->filename)) != NULL)
         fileNameLen = versionExtendedPath - window->filename;
-#endif
     for (i=0; i<NLanguageModes; i++) {
     	for (j=0; j<LanguageModes[i]->nExtensions; j++) {
     	    ext = LanguageModes[i]->extensions[j];
     	    extLen = strlen(ext);
     	    start = fileNameLen - extLen;
-#if defined(__VMS) && (__VMS_VER >= 70200000) 
-          /* VMS v7.2 has case-preserving filenames */
-            if (start >= 0 && !strncasecmp(&window->filename[start], ext, extLen))
-               return i;
-#else
             if (start >= 0 && !strncmp(&window->filename[start], ext, extLen))  
                 return i;
-#endif
     	}
     }
 
@@ -5307,24 +5219,6 @@ static void updatePatternsTo5dot1(void)
 
 static void updatePatternsTo5dot2(void)
 {
-#ifdef VMS
-    const char *cppLm5dot1 =
-	"^[ \t]*C\\+\\+:\\.CC \\.HH \\.I::::::\"\\.,/\\\\`'!\\|@#%\\^&\\*\\(\\)-=\\+\\{\\}\\[\\]\"\":;\\<\\>\\?~\"";
-    const char *perlLm5dot1 =
-	"^[ \t]*Perl:\\.PL \\.PM \\.P5:\"\\^\\[ \\\\t\\]\\*#\\[ \\\\t\\]\\*!\\.\\*perl\":::::";
-    const char *psLm5dot1 =
-        "^[ \t]*PostScript:\\.ps \\.PS \\.eps \\.EPS \\.epsf \\.epsi:\"\\^%!\":::::\"/%\\(\\)\\{\\}\\[\\]\\<\\>\"";
-    const char *tclLm5dot1 = "^[ \t]*Tcl:\\.TCL::::::";
-
-    const char *cppLm5dot2 =
-        "C++:.CC .HH .C .H .I .CXX .HXX .CPP::::::\".,/\\`'!|@#%^&*()-=+{}[]\"\":;<>?~\"";
-    const char *perlLm5dot2 =
-        "Perl:.PL .PM .P5:\"^[ \\t]*#[ \\t]*!.*perl\":Auto:None:::\".,/\\\\`'!$@#%^&*()-=+{}[]\"\":;<>?~|\"";
-    const char *psLm5dot2 =
-        "PostScript:.ps .PS .eps .EPS .epsf .epsi:\"^%!\":::::\"/%(){}[]<>\"";
-    const char *tclLm5dot2 =
-        "Tcl:.TCL::Smart:None:::";
-#else
     const char *cppLm5dot1 =
 	"^[ \t]*C\\+\\+:\\.cc \\.hh \\.C \\.H \\.i \\.cxx \\.hxx::::::\"\\.,/\\\\`'!\\|@#%\\^&\\*\\(\\)-=\\+\\{\\}\\[\\]\"\":;\\<\\>\\?~\"";
     const char *perlLm5dot1 =
@@ -5345,7 +5239,6 @@ static void updatePatternsTo5dot2(void)
         "Sh Ksh Bash:.sh .bash .ksh .profile .bashrc .bash_logout .bash_login .bash_profile:\"^[ \\t]*#[ \\t]*![ \\t]*/.*bin/(sh|ksh|bash)\":::::";
     const char *tclLm5dot2 =
         "Tcl:.tcl .tk .itcl .itk::Smart:None:::";
-#endif /* VMS */
 
     const char *cssLm5dot2 =
         "CSS:css::Auto:None:::\".,/\\`'!|@#%^&*()=+{}[]\"\":;<>?~\"";
@@ -5370,10 +5263,8 @@ static void updatePatternsTo5dot2(void)
 	regexReplace(&TempStringPrefs.language, perlLm5dot1, perlLm5dot2);
     if (regexFind(TempStringPrefs.language, psLm5dot1))
 	regexReplace(&TempStringPrefs.language, psLm5dot1, psLm5dot2);
-#ifndef VMS
     if (regexFind(TempStringPrefs.language, shLm5dot1))
 	regexReplace(&TempStringPrefs.language, shLm5dot1, shLm5dot2);
-#endif
     if (regexFind(TempStringPrefs.language, tclLm5dot1))
 	regexReplace(&TempStringPrefs.language, tclLm5dot1, tclLm5dot2);
 
@@ -5408,33 +5299,10 @@ static void updatePatternsTo5dot2(void)
 static void updatePatternsTo5dot3(void)
 {
     /* This is a bogus function on non-VMS */
-#ifdef VMS
-    const char *psLm5dot2 =
-        "^[ \t]*PostScript:\\.ps \\.PS \\.eps \\.EPS \\.epsf \\.epsi:\"\\^%!\":::::\"/%\\(\\)\\{\\}\\[\\]\\<\\>\"";
-
-    const char *psLm5dot3 = 
-        "PostScript:.ps .PS .eps .EPS .epsf .EPSF .epsi .EPSI:\"^%!\":::::\"/%(){}[]<>\"";
-    
-    /* Upgrade modified language modes, only if the user hasn't
-       altered the default 5.2 definitions. */
-    if (regexFind(TempStringPrefs.language, psLm5dot2))
-	regexReplace(&TempStringPrefs.language, psLm5dot2, psLm5dot3);
-#endif 
 }
 
 static void updatePatternsTo5dot4(void)
 {
-#ifdef VMS
-    const char *pyLm5dot3 =
-        "Python:\\.PY:\"\\^#!\\.\\*python\":Auto:None::::?\n";
-    const char *xrLm5dot3 =
-        "X Resources:\\.XRESOURCES \\.XDEFAULTS \\.NEDIT:\"\\^\\[!#\\]\\.\\*\\(\\[Aa\\]pp\\|\\[Xx\\]\\)\\.\\*\\[Dd\\]efaults\"::::::?\n";
-
-    const char *pyLm5dot4 = 
-        "Python:.PY:\"^#!.*python\":Auto:None:::\"!\"\"#$%&'()*+,-./:;<=>?@[\\\\]^`{|}~\":\n";
-    const char *xrLm5dot4 =
-        "X Resources:.XRESOURCES .XDEFAULTS .NEDIT NEDIT.RC:\"^[!#].*([Aa]pp|[Xx]).*[Dd]efaults\"::::::\n";
-#else
     const char *pyLm5dot3 =
         "Python:\\.py:\"\\^#!\\.\\*python\":Auto:None::::?\n";
     const char *xrLm5dot3 =
@@ -5444,7 +5312,6 @@ static void updatePatternsTo5dot4(void)
         "Python:.py:\"^#!.*python\":Auto:None:::\"!\"\"#$%&'()*+,-./:;<=>?@[\\\\]^`{|}~\":\n";
     const char *xrLm5dot4 =
         "X Resources:.Xresources .Xdefaults .nedit nedit.rc:\"^[!#].*([Aa]pp|[Xx]).*[Dd]efaults\"::::::\n";
-#endif
 
     /* Upgrade modified language modes, only if the user hasn't
        altered the default 5.3 definitions. */
@@ -5462,35 +5329,12 @@ static void updatePatternsTo5dot4(void)
 static void updatePatternsTo5dot6(void)
 {
     const char *pats[] = {
-#ifndef VMS
         "Csh:\\.csh \\.cshrc \\.login \\.logout:\"\\^\\[ \\\\t\\]\\*#\\[ \\\\t\\]\\*!\\[ \\\\t\\]\\*/bin/csh\"::::::\\n",
         "Csh:.csh .cshrc .tcshrc .login .logout:\"^[ \\t]*#[ \\t]*![ \\t]*/bin/t?csh\"::::::\n",
 	"LaTeX:\\.tex \\.sty \\.cls \\.ltx \\.ins:::::::\\n",
 	"LaTeX:.tex .sty .cls .ltx .ins .clo .fd:::::::\n",
         "X Resources:\\.Xresources \\.Xdefaults \\.nedit:\"\\^\\[!#\\]\\.\\*\\(\\[Aa\\]pp\\|\\[Xx\\]\\)\\.\\*\\[Dd\\]efaults\"::::::\\n",
         "X Resources:.Xresources .Xdefaults .nedit .pats nedit.rc:\"^[!#].*([Aa]pp|[Xx]).*[Dd]efaults\"::::::\n",
-#else
-	"Csh:\\.csh \\.cshrc \\.login \\.logout:\"\\^\\[ \\\\t\\]\\*#\\[ \\\\t\\]\\*!\\[ \\\\t\\]\\*/bin/csh\"::::::\\n",
-	"Csh:.CSH .CSHRC .TCSHRC .LOGIN .LOGOUT:\"^[ \\t]*#[ \\t]*![ \\t]*/bin/t?csh\"::::::\n",
-	"LaTeX:\\.TEX \\.STY \\.CLS \\.LTX \\.INS:::::::\\n",
-	"LaTeX:.TEX .STY .CLS .LTX .INS .CLO .FD:::::::\n",
-	"Lex:\\.lex:::::::\\n",
-	"Lex:.LEX:::::::\n",
-	"Matlab:\\.m \\.oct \\.sci:::::::\\n",
-	"Matlab:.M .OCT .SCI:::::::\n",
-	"Regex:\\.reg \\.regex:\"\\\\\\(\\\\\\?\\[:#=!iInN\\]\\.\\+\\\\\\\)\":None:Continuous::::\\n",
-	"Regex:.REG .REGEX:\"\\(\\?[:#=!iInN].+\\)\":None:Continuous::::\n",
-	"SGML HTML:\\.sgml \\.sgm \\.html \\.htm:\"\\\\\\<\\[Hh\\]\\[Tt\\]\\[Mm\\]\\[Ll\\]\\\\\\>\"::::::\\n",
-	"SGML HTML:.SGML .SGM .HTML .HTM:\"\\<[Hh][Tt][Mm][Ll]\\>\"::::::\n",
-	"SQL:\\.sql:::::::\\n",
-	"SQL:.SQL:::::::\n",
-	"Sh Ksh Bash:\\.sh \\.bash \\.ksh \\.profile \\.bashrc \\.bash_logout \\.bash_login \\.bash_profile:\"\\^\\[ \\\\t\\]\\*#\\[ \\\\t\\]\\*!\\[ \\\\t\\]\\*/\\.\\*bin/\\(bash\\|ksh\\|sh\\|zsh\\)\"::::::\\n",
-	"Sh Ksh Bash:.SH .BASH .KSH .PROFILE .BASHRC .BASH_LOGOUT .BASH_LOGIN .BASH_PROFILE:\"^[ \\t]*#[ \\t]*![ \\t]*/.*bin/(bash|ksh|sh|zsh)\"::::::\n",
-	"XML:\\.xml \\.xsl \\.dtd:\"\\\\\\<\\(\\?i\\\\\\?xml\\|!doctype\\)\"::None:::\"\\<\\>/=\"\"'\\(\\)\\+\\*\\?\\|\":\\n",
-	"XML:.XML .XSL .DTD:\"\\<(?i\\?xml|!doctype)\"::None:::\"<>/=\"\"'()+*?|\":\n",
-	"X Resources:\\.XRESOURCES \\.XDEFAULTS \\.NEDIT:\"\\^\\[!#\\]\\.\\*\\(\\[Aa\\]pp\\|\\[Xx\\]\\)\\.\\*\\[Dd\\]efaults\"::::::\\n",
-	"X Resources:.XRESOURCES .XDEFAULTS .NEDIT .PATS NEDIT.RC:\"^[!#].*([Aa]pp|[Xx]).*[Dd]efaults\"::::::\n",
-#endif
         NULL };
 
     /* Upgrade modified language modes, only if the user hasn't
@@ -5508,6 +5352,35 @@ static void updatePatternsTo5dot6(void)
     if (!regexFind(TempStringPrefs.styles, "^[ \t]*Operator:"))
 	spliceString(&TempStringPrefs.styles, "Operator:dark blue:Bold",
 		"^[ \t]*Bracket:");
+}
+
+static void updatePatternsTo6dot1(void)
+{
+    const char *markdownLm6dot1 =
+        "Markdown:.md .markdown .mdtxt .mdtext:::::::";
+    const char *markdownHl6dot1 = "Markdown:Default";
+    
+    const char *emphStyle = "Emphasis:black:Italic";
+    const char *strongStyle = "Strong:black:Bold";
+    const char *hdrStyle = "Header:brown:Bold";
+    
+    /* Add new patterns if there aren't already existing patterns with
+       the same name. */
+    if (!regexFind(TempStringPrefs.language, "^[ \t]*Markdown:"))
+	spliceString(&TempStringPrefs.language, markdownLm6dot1, "^[ \t]*Matlab:");
+    
+    /* Enable default highlighting patterns for these modes, unless already
+       present */
+    if (!regexFind(TempStringPrefs.highlight, "^[ \t]*Markdown:"))
+	spliceString(&TempStringPrefs.highlight, markdownHl6dot1, "^[ \t]*Matlab:");
+    
+    /* Add new styles */
+    if (!regexFind(TempStringPrefs.styles, "^[ \t]*Emphasis:"))
+	spliceString(&TempStringPrefs.styles, emphStyle, NULL);
+    if (!regexFind(TempStringPrefs.styles, "^[ \t]*Strong:"))
+	spliceString(&TempStringPrefs.styles, strongStyle, "^[ \t]*Emphasis:");
+    if (!regexFind(TempStringPrefs.styles, "^[ \t]*Header:"))
+	spliceString(&TempStringPrefs.styles, hdrStyle, "^[ \t]*Strong:");
 }
 
 
@@ -5727,11 +5600,7 @@ static int replaceMacroIfUnchanged(const char* oldText, const char* newStart,
                                    const char* newEnd)
 {
     if (caseFind(TempStringPrefs.macroCmds, oldText)) {
-#ifdef VMS
-        const char *start = strstr(PrefDescrip[1].defaultString, newStart);
-#else
         const char *start = strstr(PrefDescrip[2].defaultString, newStart);
-#endif
 	if (start) {
             const char *end = strstr(start, newEnd);
             if (end) {
@@ -5744,7 +5613,6 @@ static int replaceMacroIfUnchanged(const char* oldText, const char* newStart,
     return 0;
 }
 
-#ifndef VMS
 /* 
 ** Replace all '#' characters in shell commands by '##' to keep commands
 ** containing those working. '#' is a line number placeholder in 5.3 and
@@ -5819,19 +5687,9 @@ static void updateShellCmdsTo5dot3(void)
 
 }
 
-#else
-
-static void updateShellCmdsTo5dot3(void) {
-    /* No shell commands in VMS ! */
-    return;
-}  
-
-#endif
 
 static void updateShellCmdsTo5dot4(void) 
 {
-#ifndef VMS /* No shell commands on VMS */
-
 #ifdef __FreeBSD__
     const char* wc5dot3 = 
       "^(\\s*)set wc=`wc`; echo \\$wc\\[1\\] \"words,\" \\$wc\\[2\\] \"lines,\" \\$wc\\[3\\] \"characters\"\\n";
@@ -5846,8 +5704,6 @@ static void updateShellCmdsTo5dot4(void)
     
     if (regexFind(TempStringPrefs.shellCmds, wc5dot3))
 	regexReplace(&TempStringPrefs.shellCmds, wc5dot3, wc5dot4);
-    
-#endif /* VMS */
     
     return;
 }
@@ -6529,4 +6385,19 @@ static const char* getDefaultShell(void)
     shellBuffer[MAXPATHLEN] = '\0';
 
     return shellBuffer;
+}
+
+
+char* ChangeFontSize(const char *name, int newsize)
+{
+    char sizestr[32];
+    snprintf(sizestr, 32, "%d", newsize);
+    
+    char* newFontName = FontNameAddAttribute(
+        name,
+        strlen(name),
+        "size",
+        sizestr);
+    
+    return newFontName;
 }
