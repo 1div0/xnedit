@@ -411,7 +411,7 @@ WindowInfo *CreateWindow(const char *name, char *geometry, int iconic)
     winShell = CreateWidget(TheAppShell, "textShell",
                 topLevelShellWidgetClass, al, ac);
     window->shell = winShell;
-
+    
 #ifdef EDITRES
     XtAddEventHandler (winShell, (EventMask)0, True,
                 (XtEventHandler)_XEditResCheckMessages, NULL);
@@ -790,6 +790,9 @@ WindowInfo *CreateWindow(const char *name, char *geometry, int iconic)
     
     /* realize all of the widgets in the new window */
     RealizeWithoutForcingPosition(winShell);
+    if(GetWindowDarkTheme()) {
+        EnableWindowDarkTheme(XtDisplay(winShell), XtWindow(winShell));
+    }
     XmProcessTraversal(text, XmTRAVERSE_CURRENT);
 
     /* Make close command in window menu gracefully prompt for close */
@@ -3671,7 +3674,7 @@ static int getTabPosition(Widget tab)
 void RefreshTabState(WindowInfo *win)
 {
     XmString s1, tipString;
-    char labelString[MAXPATHLEN];
+    char labelString[2*MAXPATHLEN+4];
     char *tag = XmFONTLIST_DEFAULT_TAG;
     unsigned char alignment;
 
@@ -3679,11 +3682,11 @@ void RefreshTabState(WindowInfo *win)
        "*" (modified) will change per label alignment setting */
     XtVaGetValues(win->tab, XmNalignment, &alignment, NULL);
     if (alignment != XmALIGNMENT_END) {
-       sprintf(labelString, "%s%s",
+       snprintf(labelString, sizeof(labelString),"%s%s", 
                win->fileChanged? "*" : "",
                win->filename);
     } else {
-       sprintf(labelString, "%s%s",
+       snprintf(labelString, sizeof(labelString),"%s%s", 
                win->filename,
                win->fileChanged? "*" : "");
     }
@@ -4607,7 +4610,7 @@ void MoveDocumentDialog(WindowInfo *window)
 {
     WindowInfo *win, *targetWin, **shellWinList;
     int i, nList=0, nWindows=0, ac;
-    char tmpStr[MAXPATHLEN+50];
+    char tmpStr[2*MAXPATHLEN];
     Widget parent, dialog, listBox, moveAllOption;
     XmString *list = NULL;
     XmString popupTitle, s1;
@@ -4624,7 +4627,7 @@ void MoveDocumentDialog(WindowInfo *window)
 	if (!IsTopDocument(win) || win->shell == window->shell)
 	    continue;
 	
-	sprintf(tmpStr, "%s%s",
+	snprintf(tmpStr, sizeof(tmpStr), "%s%s",
 		win->filenameSet? win->path : "", win->filename);
 
 	list[nList] = XmStringCreateSimple(tmpStr);
@@ -4642,7 +4645,8 @@ void MoveDocumentDialog(WindowInfo *window)
     /* create the dialog */
     parent = window->shell;
     popupTitle = XmStringCreateSimple("Move Document");
-    sprintf(tmpStr, "Move %s into window of", window->filename);
+    snprintf(tmpStr, sizeof(tmpStr),
+            "Move %s into window of", window->filename);
     s1 = XmStringCreateSimple(tmpStr);
     ac = 0;
     XtSetArg(csdargs[ac], XmNdialogStyle, XmDIALOG_FULL_APPLICATION_MODAL); ac++;

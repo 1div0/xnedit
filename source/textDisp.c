@@ -115,8 +115,8 @@ static void calcLastChar(textDisp *textD);
 static int posToVisibleLineNum(textDisp *textD, int pos, int *lineNum);
 static void redisplayLine(textDisp *textD, int visLineNum, int leftClip,
         int rightClip, int leftCharIndex, int rightCharIndex);
-static void drawString(textDisp *textD, int style, int x, int y, int toX,
-        FcChar32 *string, int nChars);
+static void drawString(textDisp *textD, int style, int x, int y, int fromX,
+        int toX, FcChar32 *string, int nChars);
 static void clearRect(textDisp *textD, GC gc, int x, int y, 
         int width, int height);
 static void drawCursor(textDisp *textD, int x, int y);
@@ -1290,7 +1290,7 @@ void TextDMakeInsertPosVisible(textDisp *textD)
                     cursorPos, True);
     }
     if (topLine < 1) {
-        fprintf(stderr, "nedit: internal consistency check tl1 failed\n");
+        fprintf(stderr, "xnedit: internal consistency check tl1 failed\n");
         topLine = 1;
     }
     
@@ -1830,7 +1830,7 @@ static int posToVisibleLineNum(textDisp *textD, int pos, int *lineNum)
     	if (emptyLinesVisible(textD)) {
     	    if (textD->lastChar < textD->buffer->length) {
     		if (!posToVisibleLineNum(textD, textD->lastChar, lineNum)) {
-    		    fprintf(stderr, "nedit: Consistency check ptvl failed\n");
+    		    fprintf(stderr, "xnedit: Consistency check ptvl failed\n");
     		    return False;
     		}
     		return ++(*lineNum) <= textD->nVisibleLines-1;
@@ -1879,7 +1879,7 @@ static void redisplayLine(textDisp *textD, int visLineNum, int leftClip,
     NFont *charFL;
     XftFont *styleFont;
     XftFont *charFont;
-     
+         
     /* If line is not displayed, skip it */
     if (visLineNum < 0 || visLineNum >= textD->nVisibleLines)
     	return;
@@ -1890,7 +1890,7 @@ static void redisplayLine(textDisp *textD, int visLineNum, int leftClip,
     
     if (leftClip > rightClip) {
         return;
-    }
+    } 
 
     /* Calculate y coordinate of the string to draw */
     fontHeight = textD->ascent + textD->descent;
@@ -2051,7 +2051,7 @@ static void redisplayLine(textDisp *textD, int visLineNum, int leftClip,
         charFont = FindFont(charFL, uc);
         
         if (charStyle != style || charFont != styleFont) {
-            drawString(textD, style, startX, y, x, outStr, outPtr - outStr);
+            drawString(textD, style, startX, y, max(startX, leftClip), min(x, rightClip), outStr, outPtr - outStr);
             outPtr = outStr;
             startX = x;
             style = charStyle;
@@ -2077,7 +2077,7 @@ static void redisplayLine(textDisp *textD, int visLineNum, int leftClip,
     
     /* Draw the remaining style segment */
     //printf("final draw len: %d\n", outPtr - outStr);;
-    drawString(textD, style, startX, y, x, outStr, outPtr - outStr);
+    drawString(textD, style, startX, y, max(startX, leftClip), min(x, rightClip), outStr, outPtr - outStr);
     
     /* Draw the cursor if part of it appeared on the redisplayed part of
        this line.  Also check for the cases which are not caught as the
@@ -2117,8 +2117,8 @@ static void redisplayLine(textDisp *textD, int visLineNum, int leftClip,
 ** rectangle where text would have drawn from x to toX and from y to
 ** the maximum y extent of the current font(s).
 */
-static void drawString(textDisp *textD, int style, int x, int y, int toX,
-	FcChar32 *string, int nChars)
+static void drawString(textDisp *textD, int style, int x, int y, int fromX,
+	int toX, FcChar32 *string, int nChars)
 {
     GC gc, bgGC;
     XGCValues gcValues;
@@ -2200,9 +2200,9 @@ static void drawString(textDisp *textD, int style, int x, int y, int toX,
         clearRect(
                 textD,
                 bgGC,
-                max(x, textD->left),
+                fromX,
                 y,
-                toX - max(x, textD->left),
+                toX - fromX,
                 textD->ascent + textD->descent);
     }
     if(style & FILL_MASK) {
@@ -2220,9 +2220,9 @@ static void drawString(textDisp *textD, int style, int x, int y, int toX,
        different sized fonts for highlighting), fill in above or below
        to erase previously drawn characters */
     if (font->ascent < textD->ascent)
-    	clearRect(textD, bgGC, x, y, toX - x, textD->ascent - font->ascent);
+    	clearRect(textD, bgGC, fromX, y, toX - fromX, textD->ascent - font->ascent);
     if (font->descent < textD->descent)
-    	clearRect(textD, bgGC, x, y + textD->ascent + font->descent, toX - x,
+    	clearRect(textD, bgGC, fromX, y + textD->ascent + font->descent, toX - fromX,
     		textD->descent - font->descent);
 
     /* set up gc for writing text (set foreground properly) */
