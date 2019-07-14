@@ -29,6 +29,7 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <fnmatch.h>
+#include <errno.h>
 
 #include "icons.h"
 
@@ -45,6 +46,8 @@
 
 #include "../source/preferences.h"
 
+#include "DialogF.h"
+
 #define WIDGET_SPACING 5
 #define WINDOW_SPACING 8
 
@@ -54,7 +57,7 @@ static Pixmap fileIcon;
 static Pixmap folderShape;
 static Pixmap fileShape;
 
-static int LastView = 1; // 0: icon   1: list   2: grid(not finished yet)
+static int LastView = -1; // 0: icon   1: list   2: grid(not finished yet)
 
 void initPixmaps(Display *dp, Drawable d)
 {
@@ -71,7 +74,7 @@ void initPixmaps(Display *dp, Drawable d)
 /* -------------------- path utils -------------------- */
 
 char* ConcatPath(const char *parent, const char *name)
-{
+{ 
     size_t parentlen = strlen(parent);
     size_t namelen = strlen(name);
     
@@ -519,6 +522,8 @@ struct FileElm {
 };
 
 typedef struct FileDialogData {
+    Widget shell;
+    
     Widget path;
     PathBar *pathBar;
     Widget filter;
@@ -1226,6 +1231,41 @@ static void select_detailview(Widget w, FileDialogData *data, XtPointer u)
     filedialog_update_dir(data, NULL);
 }
 
+static void new_folder(Widget w, FileDialogData *data, XtPointer u)
+{
+    char fileName[DF_MAX_PROMPT_LENGTH];
+    
+    int response = DialogF(
+            DF_PROMPT,
+            data->shell,
+            2,
+            "Create new directory", "Directory name:",
+            fileName,
+            "OK",
+            "Cancel");
+    
+    if(response == 2) {
+        return;
+    }
+    
+    char *newFolder = ConcatPath(data->currentPath ? data->currentPath : "", fileName);
+    if(mkdir(newFolder, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)) {
+        DialogF(
+                DF_ERR,
+                data->shell,
+                1,
+                "Error creating Directory",
+                "Can't create %s:\n%s", "OK",
+                newFolder,
+                strerror(errno));
+    } else {
+        char *p = strdup(data->currentPath);
+        filedialog_update_dir(data, p);
+        free(p);
+    }
+    free(newFolder);
+}
+
 int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
 {
     Arg args[32];
@@ -1238,6 +1278,14 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
         initPixmaps(XtDisplay(parent), XtWindow(parent));
     }
     
+    if(LastView == -1) {
+        LastView = GetFsbView();
+        if(LastView < 0 || LastView > 1) {
+            LastView = 1;
+        }
+    }
+    Boolean showHiddenValue = GetFsbShowHidden();
+    
     FileDialogData data;
     memset(&data, 0, sizeof(FileDialogData));
     data.type = type;
@@ -1247,6 +1295,7 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     
     Widget dialog = CreateDialogShell(parent, promptString, args, 0);
     AddMotifCloseCallback(dialog, (XtCallbackProc)filedialog_cancel, &data);
+    data.shell = dialog;
     
     n = 0;
     XtSetArg(args[n],  XmNautoUnmanage, False); n++;
@@ -1273,7 +1322,7 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     XtSetArg(args[n], XmNrightAttachment, XmATTACH_FORM); n++;
     XtSetArg(args[n], XmNrightOffset, WINDOW_SPACING); n++;
     XtSetArg(args[n], XmNshadowThickness, 0); n++;
-    Widget viewframe = XmCreateFrame(form, "vframe", args, n);
+    Widget viewframe = XmCreateForm(form, "vframe", args, n);
     XtManageChild(viewframe);
     
     XmString v0 = XmStringCreateLocalized("Icons");
@@ -1315,8 +1364,27 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     
     n = 0;
     XtSetArg(args[n], XmNsubMenuId, menu); n++;
+    XtSetArg(args[n], XmNrightAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNmarginHeight, 0); n++;
+    XtSetArg(args[n], XmNmarginWidth, 0); n++;
     Widget view = XmCreateOptionMenu(viewframe, "option_menu", args, n);
     XtManageChild(view);
+    
+    n = 0;
+    XtSetArg(args[n], XmNleftAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNrightAttachment, XmATTACH_WIDGET); n++;
+    XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNtopAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNrightWidget, view); n++;
+    XtSetArg(args[n], XmNmarginHeight, 0); n++;
+    XtSetArg(args[n], XmNorientation, XmHORIZONTAL); n++;
+    Widget newFolder = XmCreatePushButton(viewframe, "newFolder", args, n);
+    XtManageChild(newFolder);
+    XtAddCallback(
+            newFolder,
+            XmNactivateCallback,
+            (XtCallbackProc)new_folder,
+            &data);
     
     // pathbar
     n = 0;
@@ -1366,11 +1434,13 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     XtSetArg(args[n], XmNrightAttachment, XmATTACH_FORM); n++;
     XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
     XtSetArg(args[n], XmNlabelString, str); n++;
+    XtSetArg(args[n], XmNset, showHiddenValue); n++;
     Widget showHidden = XmCreateToggleButton(filterform, "showHidden", args, n);
     XtManageChild(showHidden);
     XmStringFree(str);
     XtAddCallback(showHidden, XmNvalueChangedCallback,
                  (XtCallbackProc)filedialog_setshowhidden, &data);
+    data.showHidden = showHiddenValue;
     
     n = 0;
     str = XmStringCreateLocalized("Filter");
