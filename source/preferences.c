@@ -327,6 +327,9 @@ static struct prefData {
     int truncSubstitution;
     int forceOSConversion;
     int autoEnableXattr;
+    int windowDarkTheme;
+    int fsbView;
+    int fsbShowHidden;
 } PrefData;
 
 /* Temporary storage for preferences strings which are discarded after being
@@ -835,7 +838,7 @@ static PrefDescripRec PrefDescrip[] = {
     {"iSearchLine", "ISearchLine", PREF_BOOLEAN, "False",
     	&PrefData.iSearchLine, NULL, True},
     {"zoomStep", "ZoomStep", PREF_INT, "1",
-    	&PrefData.zoomStep, NULL, False},
+    	&PrefData.zoomStep, NULL, True},
     {"sortTabs", "SortTabs", PREF_BOOLEAN, "False",
     	&PrefData.sortTabs, NULL, True},
     {"tabBar", "TabBar", PREF_BOOLEAN, "True",
@@ -1014,7 +1017,13 @@ static PrefDescripRec PrefDescrip[] = {
     {"honorSymlinks", "HonorSymlinks", PREF_BOOLEAN, "True",
             &PrefData.honorSymlinks, NULL, False},
     {"autoEnableXattr", "AutoEnableXattr", PREF_BOOLEAN, "True",
-            &PrefData.autoEnableXattr, NULL, False}
+            &PrefData.autoEnableXattr, NULL, False},
+    {"windowDarkTheme", "WindowDarkTheme", PREF_BOOLEAN, "False",
+            &PrefData.windowDarkTheme, NULL, False},
+    {"fsbView", "FsbView", PREF_INT, "1",
+            &PrefData.fsbView, NULL, True},
+    {"fsbShowHidden", "FsbShowHidden", PREF_BOOLEAN, "False",
+            &PrefData.fsbShowHidden, NULL, True}
 };
 
 static XrmOptionDescRec OpTable[] = {
@@ -1370,7 +1379,7 @@ void SaveNEditPrefs(Widget parent, int quietly)
                 ImportedFile == NULL ?
                 "Default preferences will be saved in the file:\n"
                 "%s\n"
-                "NEdit automatically loads this file\n"
+                "XNEdit automatically loads this file\n"
                 "each time it is started." :
                 "Default preferences will be saved in the file:\n"
                 "%s\n"
@@ -2101,6 +2110,21 @@ Boolean GetAutoEnableXattr(void)
     return (Boolean)PrefData.autoEnableXattr;
 }
 
+Boolean GetWindowDarkTheme(void)
+{
+    return (Boolean)PrefData.windowDarkTheme;
+}
+
+int GetFsbView(void)
+{
+    return PrefData.fsbView;
+}
+
+Boolean GetFsbShowHidden(void)
+{
+    return (Boolean)PrefData.fsbShowHidden;
+}
+
 int GetPrefOverrideVirtKeyBindings(void)
 {
     return PrefData.virtKeyOverride;
@@ -2134,7 +2158,7 @@ int CheckPrefsChangesSaved(Widget dialogParent)
     resp = DialogF(DF_WARN, dialogParent, 3, "Default Preferences",
             ImportedFile == NULL ?
             "Default Preferences have changed.\n"
-            "Save changes to NEdit preference file?" :
+            "Save changes to XNEdit preference file?" :
             "Default Preferences have changed.  SAVING \n"
             "CHANGES WILL INCORPORATE ADDITIONAL\nSETTINGS FROM FILE: %s",
             "Save", "Don't Save", "Cancel", ImportedFile);
@@ -2791,7 +2815,7 @@ static void shellSelOKCB(Widget widget, XtPointer clientData,
 
     /*  Leave with a warning if the dialog is not up.  */
     if (!XtIsRealized(shellSelDialog)) {
-        fprintf(stderr, "nedit: Callback shellSelOKCB() illegally called.\n");
+        fprintf(stderr, "xnedit: Callback shellSelOKCB() illegally called.\n");
         return;
     }
 
@@ -2852,7 +2876,7 @@ void EditLanguageModes(void)
     /* Create a form widget in an application shell */
     ac = 0;
     XtSetArg(args[ac], XmNdeleteResponse, XmDO_NOTHING); ac++;
-    XtSetArg(args[ac], XmNiconName, "NEdit Language Modes"); ac++;
+    XtSetArg(args[ac], XmNiconName, "XNEdit Language Modes"); ac++;
     XtSetArg(args[ac], XmNtitle, "Language Modes"); ac++;
     LMDialog.shell = CreateWidget(TheAppShell, "langModes",
 	    topLevelShellWidgetClass, args, ac);
@@ -3622,7 +3646,7 @@ static languageModeRec *readLMDialogFields(int silent)
             return NULL;
         } else
             if (DeleteTagsFile(lm->defTipsFile, TIP, False) == FALSE)
-                fprintf(stderr, "nedit: Internal error: Trouble deleting " 
+                fprintf(stderr, "xnedit: Internal error: Trouble deleting " 
                         "calltips file(s):\n  \"%s\"\n", lm->defTipsFile);
     }
     
@@ -5147,7 +5171,7 @@ int ParseError(Widget toDialog, const char *stringStart, const char *stoppedAt,
     errorLine[len] = '\0';
     if (toDialog == NULL)
     {
-        fprintf(stderr, "NEdit: %s in %s:\n%s\n", message, errorIn, errorLine);
+        fprintf(stderr, "XNEdit: %s in %s:\n%s\n", message, errorIn, errorLine);
     } else
     {
         DialogF(DF_WARN, toDialog, 1, "Parse Error", "%s in %s:\n%s", "OK",
@@ -6378,7 +6402,7 @@ static const char* getDefaultShell(void)
     if (NULL == passwdEntry)
     {
         /*  Something bad happened! Do something, quick!  */
-        perror("nedit: Failed to get passwd entry (falling back to 'sh')");
+        perror("xnedit: Failed to get passwd entry (falling back to 'sh')");
         return "sh";
     }
 

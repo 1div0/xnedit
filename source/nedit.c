@@ -155,7 +155,7 @@ static char *fallbackResources[] = {
        groups the fonts into the right classes.  It's then easier for
        the user or environment to override this sensibly:
 
-         nedit -xrm '*textFontList: myfont'
+         xnedit -xrm '*textFontList: myfont'
 
        This is broken in recent versions of LessTif.
 
@@ -231,7 +231,10 @@ static char *fallbackResources[] = {
        jammed into the database, rather than fallbacks.  We really want
        the accelerators to be there even if someone creates an app-defaults
        file against our wishes. */
-
+    
+    "*newFolder.labelString: New Folder",
+    "*newFolder.labelType: XmPIXMAP",
+    
     "*text.lineNumForeground: " NEDIT_DEFAULT_LINENO_FG,
     "*text.background: " NEDIT_DEFAULT_TEXT_BG,
     "*text.foreground: " NEDIT_DEFAULT_FG,
@@ -416,6 +419,10 @@ static const char cmdLineHelp[] =
 "[Sorry, no on-line help available.]\n"; /* Why is that ? */
 #endif /*VMS*/
 
+/* This constant will be used in preference keys. Hence, for now we do not
+ * change it for maintaining backwards compatibility to NEdit preferences
+ * TODO: maybe we should decouple AppName and preference keys
+ */
 static char *XNEditAppName = "nedit";
 
 char* GetAppName(void)
@@ -447,7 +454,7 @@ int main(int argc, char **argv)
     }
 
     if (stability == MotifKnownBad) {
-        fputs("nedit: WARNING: This version of NEdit is built incorrectly, and will be unstable.\n",
+        fputs("xnedit: WARNING: This version of XNEdit is built incorrectly, and will be unstable.\n",
               stderr);
 #ifndef BUILD_BROKEN_NEDIT
     /* Dear maintainers who are patching this; please have mercy on your users and link against 
@@ -456,7 +463,7 @@ int main(int argc, char **argv)
 #endif
     }
 
-    /* Save the command which was used to invoke nedit for restart command */
+    /* Save the command which was used to invoke xnedit for restart command */
     ArgV0 = argv[0];
     
     for (i=1; i<argc; i++) {
@@ -559,7 +566,7 @@ int main(int argc, char **argv)
                 exit(EXIT_SUCCESS);
             }
         }
-	fputs ("NEdit: Can't open display\n", stderr);
+	fputs ("XNEdit: Can't open display\n", stderr);
 	exit(EXIT_FAILURE);
     }
     
@@ -662,7 +669,7 @@ int main(int argc, char **argv)
 	} else if (opts && !strcmp(argv[i], "-tags")) {
     	    nextArg(argc, argv, &i);
     	    if (!AddTagsFile(argv[i], TAG))
-    	    	fprintf(stderr, "NEdit: Unable to load tags file\n");
+    	    	fprintf(stderr, "XNEdit: Unable to load tags file\n");
     	} else if (opts && !strcmp(argv[i], "-do")) {
     	    nextArg(argc, argv, &i);
 	    if (checkDoMacroArg(argv[i]))
@@ -683,13 +690,13 @@ int main(int argc, char **argv)
     	    nextArg(argc, argv, &i);
 	    nRead = sscanf(argv[i], "%d", &lineNum);
 	    if (nRead != 1)
-    		fprintf(stderr, "NEdit: argument to line should be a number\n");
+    		fprintf(stderr, "XNEdit: argument to line should be a number\n");
     	    else
     	    	gotoLine = True;
     	} else if (opts && (*argv[i] == '+')) {
     	    nRead = sscanf((argv[i]+1), "%d", &lineNum);
 	    if (nRead != 1)
-    		fprintf(stderr, "NEdit: argument to + should be a number\n");
+    		fprintf(stderr, "XNEdit: argument to + should be a number\n");
     	    else
     	    	gotoLine = True;
     	} else if (opts && !strcmp(argv[i], "-server")) {
@@ -724,7 +731,7 @@ int main(int argc, char **argv)
 #ifdef VMS
 	    *argv[i] = '/';
 #endif /*VMS*/
-    	    fprintf(stderr, "nedit: Unrecognized option %s\n%s", argv[i],
+    	    fprintf(stderr, "xnedit: Unrecognized option %s\n%s", argv[i],
     	    	    cmdLineHelp);
     	    exit(EXIT_FAILURE);
     	} else {
@@ -790,7 +797,7 @@ int main(int argc, char **argv)
 		    if (window)
     	    		lastFile = window;
                 } else {
-		    fprintf(stderr, "nedit: file name too long: %s\n", nameList[j]);
+		    fprintf(stderr, "xnedit: file name too long: %s\n", nameList[j]);
                 }
 		free(nameList[j]);
 	    }
@@ -847,7 +854,7 @@ int main(int argc, char **argv)
 		if (window)
     	    	    lastFile = window;
 	    } else {
-		fprintf(stderr, "nedit: file name too long: %s\n", argv[i]);
+		fprintf(stderr, "xnedit: file name too long: %s\n", argv[i]);
 	    }
 #endif /*VMS*/
 
@@ -909,7 +916,7 @@ static void nextArg(int argc, char **argv, int *argIndex)
 #ifdef VMS
 	    *argv[*argIndex] = '/';
 #endif /*VMS*/
-    	fprintf(stderr, "NEdit: %s requires an argument\n%s", argv[*argIndex],
+    	fprintf(stderr, "XNEdit: %s requires an argument\n%s", argv[*argIndex],
     	        cmdLineHelp);
     	exit(EXIT_FAILURE);
     }

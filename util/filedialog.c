@@ -27,12 +27,18 @@
 #include <string.h>
 #include <ctype.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <dirent.h>
 #include <fnmatch.h>
+#include <errno.h>
+#include <inttypes.h>
 
 #include "icons.h"
 
 #include <X11/xpm.h>
+
+#include <Xm/PrimitiveP.h>
+#include <X11/CoreP.h>
 
 #include"../Microline/XmL/Grid.h"
 
@@ -45,25 +51,454 @@
 
 #include "../source/preferences.h"
 
+#include "DialogF.h"
+
 #define WIDGET_SPACING 5
 #define WINDOW_SPACING 8
 
+#define BUTTON_EXTRA_SPACE 4
+
+#define DATE_FORMAT_SAME_YEAR  "%b %d %H:%M"
+#define DATE_FORMAT_OTHER_YEAR "%b %d  %Y"
+
+#define KB_SUFFIX "KiB"
+#define MB_SUFFIX "MiB"
+#define GB_SUFFIX "GiB"
+#define TB_SUFFIX "TiB"
+
 static int pixmaps_initialized = 0;
+static int pixmaps_error = 0;
 static Pixmap folderIcon;
 static Pixmap fileIcon;
 static Pixmap folderShape;
 static Pixmap fileShape;
 
-static int LastView = 1; // 0: icon   1: list   2: grid(not finished yet)
+static Pixmap newFolderIcon16;
+static Pixmap newFolderIcon24;
+static Pixmap newFolderIcon32;
 
-void initPixmaps(Display *dp, Drawable d)
+static XColor bgColor;
+
+static int LastView = -1; // 0: icon   1: list   2: grid
+
+//define FSB_ENABLE_DETAIL
+
+const char *newFolder16Data = "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377>>>\377\064\064\064\377\064\064\064\377"
+  "\064\064\064\377\064\064\064\377ZZZ\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\064\064\064\377\177\177\177\377\177\177\177\377\177"
+  "\177\177\377www\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\000"
+  "\000\000\377\363\267/\377\363\267/\377\000\000\000\377\064\064\064\377\064\064\064\377\343"
+  "\343\343\377\064\064\064\377ooo\377ooo\377ooo\377ooo\377ooo\377ooo\377ooo\377"
+  "ooo\377\000\000\000\377\363\267/\377\363\267/\377\000\000\000\377ooo\377^^^\377;;;\377"
+  "\064\064\064\377ooo\377ooo\377ooo\377ooo\377ooo\377\000\000\000\377\000\000\000\377\000\000"
+  "\000\377\000\000\000\377\363\267/\377\363\267/\377\000\000\000\377\000\000\000\377\000\000\000\377"
+  "\000\000\000\377\061\061\061\377///\377---\377---\377---\377---\377\000\000\000\377\363"
+  "\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377"
+  "\363\267/\377\363\267/\377\000\000\000\377\061\061\061\377MMM\377MMM\377MMM\377MM"
+  "M\377MMM\377\000\000\000\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377"
+  "\363\267/\377\363\267/\377\363\267/\377\363\267/\377\000\000\000\377\064\064\064\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377"
+  "\363\267/\377\363\267/\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\064\064"
+  "\064\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377\000\000\000\377"
+  "\363\267/\377\363\267/\377\000\000\000\377MMM\377MMM\377\064\064\064\377\064\064\064"
+  "\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377\000\000\000\377\363"
+  "\267/\377\363\267/\377\000\000\000\377MMM\377MMM\377\064\064\064\377\064\064\064\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377\000\000\000\377\000\000\000"
+  "\377\000\000\000\377\000\000\000\377MMM\377MMM\377\064\064\064\377\064\064\064\377MMM\377M"
+  "MM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM"
+  "\377MMM\377MMM\377\064\064\064\377\064\064\064\377MMM\377MMM\377MMM\377MMM\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377\064"
+  "\064\064\377\064\064\064\377MMM\377MMM\377MMM\377MMM\377KKK\377KKK\377KKK\377"
+  "KKK\377KKK\377JJJ\377JJJ\377GGG\377GGG\377GGG\377\064\064\064\377ZZZ\377\064"
+  "\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377"
+  "\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064"
+  "\377\064\064\064\377\064\064\064\377ZZZ\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377";
+
+const char *newFolder24Data = "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377EEE\377\064\064\064\377\064\064"
+  "\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\065\065\065\377"
+  "uuu\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000"
+  "\000\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\064"
+  "\064\064\377eee\377\202\202\202\377\202\202\202\377\202\202\202\377\202\202"
+  "\202\377xxx\377fff\377AAA\377uuu\377\354\354\354\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\000\000\000\377\363\267/\377\363\267"
+  "/\377\363\267/\377\000\000\000\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\374\374\374\377\064\064\064\377[[[\377ttt\377ttt\377ttt\377ttt\377ttt\377"
+  "rrr\377eee\377EEE\377\071\071\071\377\071\071\071\377\071\071\071\377\071\071\071\377"
+  "\070\070\070\377\000\000\000\377\363\267/\377\363\267/\377\363\267/\377\000\000\000\377"
+  "\070\070\070\377\064\064\064\377;;;\377\264\264\264\377\064\064\064\377XXX\377ooo"
+  "\377ooo\377ooo\377ooo\377ooo\377ooo\377ooo\377kkk\377hhh\377hhh\377hhh\377"
+  "hhh\377hhh\377\000\000\000\377\363\267/\377\363\267/\377\363\267/\377\000\000\000\377"
+  "hhh\377hhh\377SSS\377\070\070\070\377\064\064\064\377XXX\377ooo\377ooo\377ooo\377"
+  "ooo\377ooo\377ooo\377ooo\377ooo\377ooo\377\000\000\000\377\000\000\000\377\000\000\000\377"
+  "\000\000\000\377\000\000\000\377\363\267/\377\363\267/\377\363\267/\377\000\000\000\377\000\000"
+  "\000\377\000\000\000\377\000\000\000\377\000\000\000\377\064\064\064\377HHH\377VVV\377UUU\377UU"
+  "U\377UUU\377UUU\377UUU\377UUU\377UUU\377UUU\377\000\000\000\377\363\267/\377\363"
+  "\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377"
+  "\363\267/\377\363\267/\377\363\267/\377\363\267/\377\000\000\000\377///\377///"
+  "\377...\377...\377...\377...\377...\377...\377...\377...\377...\377\000\000\000"
+  "\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363"
+  "\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377"
+  "\000\000\000\377///\377@@@\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377"
+  "MMM\377MMM\377\000\000\000\377\363\267/\377\363\267/\377\363\267/\377\363\267/"
+  "\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363"
+  "\267/\377\363\267/\377\000\000\000\377\064\064\064\377BBB\377MMM\377MMM\377MMM\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377\000\000\000\377\000\000\000\377\000\000\000\377"
+  "\000\000\000\377\000\000\000\377\363\267/\377\363\267/\377\363\267/\377\000\000\000\377\000\000"
+  "\000\377\000\000\000\377\000\000\000\377\000\000\000\377\064\064\064\377BBB\377MMM\377MMM\377MM"
+  "M\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377"
+  "\000\000\000\377\363\267/\377\363\267/\377\363\267/\377\000\000\000\377MMM\377MMM\377"
+  "BBB\377\064\064\064\377\064\064\064\377BBB\377MMM\377MMM\377MMM\377MMM\377MMM\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377\000\000\000\377\363\267"
+  "/\377\363\267/\377\363\267/\377\000\000\000\377MMM\377MMM\377BBB\377\064\064\064\377"
+  "\064\064\064\377BBB\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM"
+  "\377MMM\377MMM\377MMM\377MMM\377MMM\377\000\000\000\377\363\267/\377\363\267/\377"
+  "\363\267/\377\000\000\000\377MMM\377MMM\377BBB\377\064\064\064\377\064\064\064\377BB"
+  "B\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377"
+  "MMM\377MMM\377MMM\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377M"
+  "MM\377MMM\377BBB\377\064\064\064\377\064\064\064\377BBB\377MMM\377MMM\377MMM\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MM"
+  "M\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377BBB\377\064\064\064\377\064\064"
+  "\064\377BBB\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MM"
+  "M\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377"
+  "MMM\377BBB\377\064\064\064\377\064\064\064\377BBB\377MMM\377MMM\377MMM\377MMM\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MM"
+  "M\377MMM\377MMM\377MMM\377MMM\377MMM\377BBB\377\064\064\064\377\064\064\064\377"
+  "BBB\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MM"
+  "M\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377"
+  "BBB\377\064\064\064\377\064\064\064\377BBB\377MMM\377MMM\377MMM\377MMM\377MMM\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MM"
+  "M\377MMM\377MMM\377MMM\377MMM\377BBB\377\064\064\064\377\064\064\064\377BBB\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MM"
+  "M\377MMM\377MMM\377MMM\377MMM\377MMM\377KKK\377KKK\377KKK\377KKK\377@@@\377"
+  "\064\064\064\377\064\064\064\377BBB\377MMM\377MMM\377MMM\377MMM\377MMM\377KKK\377"
+  "III\377III\377III\377III\377III\377III\377III\377GGG\377GGG\377GGG\377FF"
+  "F\377FFF\377FFF\377FFF\377>>>\377\064\064\064\377EEE\377\064\064\064\377\064\064"
+  "\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377"
+  "\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064"
+  "\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064"
+  "\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377EEE\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377";
+
+const char *newFolder32Data = "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377UUU\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377"
+  "\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377>>>\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\000\000\000\377\000\000\000\377\000\000\000\377\000"
+  "\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064"
+  "\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377>>>"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000"
+  "\000\377\000\000\000\377\000\000\000\377\000\000\000\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\064\064\064\377"
+  "\064\064\064\377\204\204\204\377\204\204\204\377\204\204\204\377\204\204\204"
+  "\377\204\204\204\377\204\204\204\377yyy\377ooo\377UUU\377\064\064\064\377>>"
+  ">\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\000\000\000\377\000\000\000\377\363\267/\377\363\267/\377\363\267/\377\363"
+  "\267/\377\000\000\000\377\000\000\000\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\064\064\064\377\064\064\064"
+  "\377yyy\377yyy\377yyy\377yyy\377yyy\377yyy\377yyy\377yyy\377ooo\377UUU\377"
+  "\064\064\064\377>>>\377>>>\377>>>\377>>>\377>>>\377\000\000\000\377\000\000\000\377\363"
+  "\267/\377\363\267/\377\363\267/\377\363\267/\377\000\000\000\377\000\000\000\377;;;\377"
+  ";;;\377\064\064\064\377\064\064\064\377MMM\377\377\377\377\377\064\064\064\377\064"
+  "\064\064\377ooo\377ooo\377ooo\377ooo\377ooo\377ooo\377ooo\377ooo\377ooo\377"
+  "ooo\377UUU\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064"
+  "\064\377\000\000\000\377\000\000\000\377\363\267/\377\363\267/\377\363\267/\377\363\267"
+  "/\377\000\000\000\377\000\000\000\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064"
+  "\377\064\064\064\377MMM\377\064\064\064\377\064\064\064\377ooo\377ooo\377ooo\377o"
+  "oo\377ooo\377ooo\377ooo\377ooo\377ooo\377ooo\377ooo\377ooo\377ooo\377ooo"
+  "\377ooo\377ooo\377\000\000\000\377\000\000\000\377\363\267/\377\363\267/\377\363\267"
+  "/\377\363\267/\377\000\000\000\377\000\000\000\377ooo\377ooo\377ooo\377ooo\377\064\064"
+  "\064\377\064\064\064\377\064\064\064\377\064\064\064\377ooo\377ooo\377ooo\377ooo\377"
+  "ooo\377ooo\377ooo\377ooo\377ooo\377ooo\377\000\000\000\377\000\000\000\377\000\000\000\377"
+  "\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\363\267/\377\363\267/"
+  "\377\363\267/\377\363\267/\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000"
+  "\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\064\064\064\377\064\064\064\377ooo\377o"
+  "oo\377ooo\377ooo\377ooo\377ooo\377ooo\377ooo\377ooo\377ooo\377\000\000\000\377"
+  "\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\363"
+  "\267/\377\363\267/\377\363\267/\377\363\267/\377\000\000\000\377\000\000\000\377\000\000"
+  "\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\064\064\064\377\064"
+  "\064\064\377\064\064\064\377+++\377+++\377+++\377+++\377+++\377+++\377+++\377"
+  "+++\377+++\377\000\000\000\377\000\000\000\377\363\267/\377\363\267/\377\363\267/\377"
+  "\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267"
+  "/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363"
+  "\267/\377\363\267/\377\000\000\000\377\000\000\000\377...\377...\377...\377...\377.."
+  ".\377...\377...\377...\377...\377...\377...\377...\377\000\000\000\377\000\000\000\377"
+  "\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267"
+  "/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363"
+  "\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\000\000\000\377\000"
+  "\000\000\377...\377...\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377M"
+  "MM\377MMM\377MMM\377\000\000\000\377\000\000\000\377\363\267/\377\363\267/\377\363\267"
+  "/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363"
+  "\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377"
+  "\363\267/\377\363\267/\377\000\000\000\377\000\000\000\377\064\064\064\377\064\064\064\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377\000"
+  "\000\000\377\000\000\000\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363"
+  "\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377"
+  "\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267/\377\363\267"
+  "/\377\000\000\000\377\000\000\000\377\064\064\064\377\064\064\064\377MMM\377MMM\377MMM\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377\000\000\000\377\000\000\000\377\000\000"
+  "\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\363\267/\377\363"
+  "\267/\377\363\267/\377\363\267/\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377"
+  "\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\064\064\064\377\064\064\064\377MMM\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377\000\000\000\377"
+  "\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\363"
+  "\267/\377\363\267/\377\363\267/\377\363\267/\377\000\000\000\377\000\000\000\377\000\000"
+  "\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\064\064\064\377\064"
+  "\064\064\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377\000\000\000\377\000\000\000\377\363"
+  "\267/\377\363\267/\377\363\267/\377\363\267/\377\000\000\000\377\000\000\000\377MMM\377"
+  "MMM\377MMM\377MMM\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MM"
+  "M\377MMM\377MMM\377MMM\377MMM\377MMM\377\000\000\000\377\000\000\000\377\363\267/\377"
+  "\363\267/\377\363\267/\377\363\267/\377\000\000\000\377\000\000\000\377MMM\377MMM\377"
+  "MMM\377MMM\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377MMM\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MM"
+  "M\377MMM\377MMM\377MMM\377MMM\377\000\000\000\377\000\000\000\377\363\267/\377\363\267"
+  "/\377\363\267/\377\363\267/\377\000\000\000\377\000\000\000\377MMM\377MMM\377MMM\377"
+  "MMM\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377MMM\377MMM\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MM"
+  "M\377MMM\377MMM\377MMM\377\000\000\000\377\000\000\000\377\363\267/\377\363\267/\377"
+  "\363\267/\377\363\267/\377\000\000\000\377\000\000\000\377MMM\377MMM\377MMM\377MMM\377"
+  "\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377MMM\377MMM\377MMM\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MM"
+  "M\377MMM\377MMM\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000"
+  "\000\377\000\000\000\377\000\000\000\377MMM\377MMM\377MMM\377MMM\377\064\064\064\377\064\064"
+  "\064\377\064\064\064\377\064\064\064\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377\000"
+  "\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000\000\377\000\000"
+  "\000\377MMM\377MMM\377MMM\377MMM\377\064\064\064\377\064\064\064\377\064\064\064\377"
+  "\064\064\064\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM"
+  "\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377\064\064\064"
+  "\377\064\064\064\377\064\064\064\377\064\064\064\377MMM\377MMM\377MMM\377MMM\377M"
+  "MM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM"
+  "\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377"
+  "MMM\377MMM\377MMM\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MM"
+  "M\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377\064\064\064\377\064\064\064\377"
+  "\064\064\064\377\064\064\064\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MM"
+  "M\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377"
+  "\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377MMM\377MMM\377MMM\377"
+  "MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MM"
+  "M\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377HHH\377HHH\377"
+  "HHH\377HHH\377HHH\377HHH\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064"
+  "\064\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377MMM\377HHH\377HH"
+  "H\377HHH\377HHH\377HHH\377HHH\377HHH\377HHH\377HHH\377HHH\377FFF\377FFF\377"
+  "FFF\377FFF\377FFF\377FFF\377FFF\377FFF\377FFF\377FFF\377\064\064\064\377\064"
+  "\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377"
+  "\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064"
+  "\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064"
+  "\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377"
+  "\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064"
+  "\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377UUU\377\064\064\064"
+  "\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064"
+  "\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377"
+  "\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064"
+  "\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064"
+  "\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377\064\064\064\377"
+  "\064\064\064\377UUU\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377"
+  "\377\377\377\377\377\377\377\377\377";
+
+/*
+ * get number of shifts for specific color mask
+ */
+static int get_shift(unsigned long mask) {
+    if(mask == 0) {
+        return 0;
+    }
+    
+    int shift = 0;
+    while((mask & 1L) == 0) {
+        shift++;
+        mask >>= 1;
+    }
+    return shift;
+}
+
+/*
+ * get number of bits from color mask
+ */
+static int get_mask_len(unsigned long mask) {
+    if(mask == 0) {
+        return 0;
+    }
+    
+    while((mask & 1L) == 0) {
+        mask >>= 1;
+    }
+    int len = 0;
+    while((mask & 1L) == 1) {
+        len++;
+        mask >>= 1;
+    }
+    return len;
+}
+
+/*
+ * create an image from data and copy image to the specific pixmap
+ */
+static void create_image(Display *dp, Visual *visual, int depth, Pixmap pix, const char *data, int wh) {
+    // wh is width and height
+    size_t imglen = wh*wh*4;
+    char *imgdata = malloc(imglen); // will be freed with XDestroyImage
+    
+    //get number of shifts required for each color bit mask
+    int red_shift = get_shift(visual->red_mask);
+    int green_shift = get_shift(visual->green_mask);
+    int blue_shift = get_shift(visual->blue_mask);
+    
+    uint32_t *src = (uint32_t*)data;
+    uint32_t *dst = (uint32_t*)imgdata;
+    // init all bits that are not in any mask
+    uint32_t pixel_init = UINT32_MAX ^ (visual->red_mask ^ visual->green_mask ^ visual->blue_mask);
+    
+    // convert pixels to visual-specific format
+    size_t len = wh*wh;
+    for(int i=0;i<len;i++) {
+        uint32_t pixel = src[i];
+        uint8_t red = pixel & 0xFF;
+        uint8_t green = (pixel & 0xFF00) >> 8;
+        uint8_t blue = (pixel & 0xFF0000) >> 16;
+        // TODO: work with alpha value
+        if(pixel == UINT32_MAX) {
+            red = bgColor.red;
+            green = bgColor.green;
+            blue = bgColor.blue;
+        }
+        
+        uint32_t out = pixel_init;
+        out ^= (red << red_shift);
+        out ^= (green << green_shift);
+        out ^= (blue << blue_shift);
+        dst[i] = out;
+    }
+    
+    // create rgb image (32 bit alignment)
+    XImage *img = XCreateImage(dp, visual, depth, ZPixmap, 0, imgdata, wh, wh, 32, 0);
+    
+    XGCValues gcval;
+    gcval.graphics_exposures = 0;
+    unsigned long valuemask = GCGraphicsExposures;	
+    GC gc = XCreateGC(dp, newFolderIcon16, valuemask, &gcval);
+    
+    XPutImage(dp, pix, gc, img, 0, 0, 0, 0, wh, wh);
+    
+    XDestroyImage(img);
+    XFreeGC(dp, gc);
+}
+
+static void initPixmaps(Display *dp, Drawable d, Screen *screen, int depth)
 {
+    // TODO: remove Xpm dependency and use create_image
     if(XpmCreatePixmapFromData(dp, d, DtdirB_m_pm, &folderIcon, &folderShape, NULL)) {
         fprintf(stderr, "failed to create folder pixmap\n");
     }
     if(XpmCreatePixmapFromData(dp, d, Dtdata_m_pm, &fileIcon, &fileShape, NULL)) {
         fprintf(stderr, "failed to create file pixmap\n");
     }
+      
+    // get the correct visual for current screen/depth
+    Visual *visual = NULL;
+    for(int i=0;i<screen->ndepths;i++) {
+        Depth d = screen->depths[i];
+        if(d.depth == depth) {
+            for(int v=0;v<d.nvisuals;v++) {
+                Visual *vs = &d.visuals[v];
+                if(get_mask_len(vs->red_mask) == 8) {
+                    visual = vs;
+                    break;
+                }
+            }
+        }
+    }
+    
+    if(!visual) {
+        // no visual found for using rgb images
+        fprintf(stderr, "can't use images with this visual\n");
+        pixmaps_initialized = 1;
+        pixmaps_error = 1;
+        return;
+    }
+    
+    // create pixmaps and load images
+    newFolderIcon16 = XCreatePixmap(dp, d, 16, 16, depth);
+    if(newFolderIcon16 == BadValue) {
+        fprintf(stderr, "failed to create newFolderIcon16 pixmap\n");
+        pixmaps_error = 1;
+    } else {
+        create_image(dp, visual, depth, newFolderIcon16, newFolder16Data, 16);
+    }
+    
+    newFolderIcon24 = XCreatePixmap(dp, d, 24, 24, depth);
+    if(newFolderIcon24 == BadValue) {
+        fprintf(stderr, "failed to create newFolderIcon24 pixmap\n");
+        pixmaps_error = 1;
+    } else {
+        create_image(dp, visual, depth, newFolderIcon24, newFolder24Data, 24);
+    }
+    
+    newFolderIcon32 = XCreatePixmap(dp, d, 32, 32, depth);
+    if(newFolderIcon32 == BadValue) {
+        fprintf(stderr, "failed to create newFolderIcon32 pixmap\n");
+        pixmaps_error = 1;
+    } else {
+        create_image(dp, visual, depth, newFolderIcon32, newFolder32Data, 32);
+    }
+    
     pixmaps_initialized = 1;
 }
 
@@ -71,7 +506,7 @@ void initPixmaps(Display *dp, Drawable d)
 /* -------------------- path utils -------------------- */
 
 char* ConcatPath(const char *parent, const char *name)
-{
+{ 
     size_t parentlen = strlen(parent);
     size_t namelen = strlen(name);
     
@@ -470,7 +905,7 @@ void PathBarSetPath(PathBar *bar, char *path)
     int begin = i;
     for(;i<=len;i++) {
         char c = path[i];
-        if(c == '/' || c == '\0' && i > begin+1) {
+        if((c == '/' || c == '\0') && i > begin+1) {
             char *segStr = NEditMalloc(i - begin + 1);
             memcpy(segStr, path+begin, i-begin);
             segStr[i-begin] = '\0';
@@ -512,14 +947,17 @@ void PathBarSetPath(PathBar *bar, char *path)
 
 /* -------------------- file dialog -------------------- */
 
-typedef struct FileList FileList;
-struct FileList {
+typedef struct FileElm FileElm;
+struct FileElm {
     char *path;
     int isDirectory;
-    FileList *next;
+    uint64_t size;
+    time_t lastModified;
 };
 
 typedef struct FileDialogData {
+    Widget shell;
+    
     Widget path;
     PathBar *pathBar;
     Widget filter;
@@ -534,9 +972,11 @@ typedef struct FileDialogData {
     Widget listform;
     Widget dirlist;
     Widget filelist;
+    Widget filelistcontainer;
     
     // detail view
     Widget grid;
+    Widget gridcontainer;
     
     Widget name;
     Widget wrap;
@@ -547,8 +987,8 @@ typedef struct FileDialogData {
     Widget bom;
     Widget xattr;
     
-    FileList *dirs;
-    FileList *files;
+    FileElm *dirs;
+    FileElm *files;
     int dircount;
     int filecount;
     int maxnamelen;
@@ -608,39 +1048,15 @@ static void filedialog_cleanup(FileDialogData *data)
     }
 }
 
-static int filecmp(FileList *file1, FileList *file2)
+static int filecmp(const void *f1, const void *f2)
 {
+    const FileElm *file1 = f1;
+    const FileElm *file2 = f2;
     if(file1->isDirectory != file2->isDirectory) {
         return file1->isDirectory < file2->isDirectory;
     }
     
     return strcmp(FileName(file1->path), FileName(file2->path));
-}
-
-static FileList* filelist_add(FileList *list, FileList *newelm)
-{
-    if(!list) {
-        return newelm;
-    }
-    
-    FileList *l = list;
-    FileList *prev = NULL;
-    while(l) {
-        if(filecmp(l, newelm) > 0) {
-            if(prev) {
-                prev->next = newelm;
-            } else {
-                list = newelm;
-            }
-            newelm->next = l;
-            return list;
-        }
-        prev = l;
-        l = l->next;
-    }
-    
-    prev->next = newelm;
-    return list;
 }
 
 static void resize_container(Widget w, FileDialogData *data, XtPointer d) 
@@ -667,12 +1083,12 @@ static void init_container_size(FileDialogData *data)
     XtVaSetValues(data->container, XtNwidth, width, XtNheight, 100, NULL);
 }
 
-typedef void(*ViewUpdateFunc)(FileDialogData*,FileList*,FileList*,int,int,int);
+typedef void(*ViewUpdateFunc)(FileDialogData*,FileElm*,FileElm*,int,int,int);
 
 static void filedialog_update_iconview(
         FileDialogData *data,
-        FileList *dirs,
-        FileList *files,
+        FileElm *dirs,
+        FileElm *files,
         int dircount,
         int filecount,
         int maxnamelen)
@@ -696,13 +1112,15 @@ static void filedialog_update_iconview(
     }
     
     int numgadgets = 0;
-    FileList *e = dirs;
+    FileElm *ls = dirs;
+    int count = dircount;
     int pos = 0;
     for(int i=0;i<2;i++) {
-        while(e) {
+        for(int j=0;j<count;j++) {
+            FileElm *e = &ls[j];
+            
             char *name = FileName(e->path);
             if((!data->showHidden && name[0] == '.') || (!e->isDirectory && fnmatch(filterStr, name, 0))) {
-                e = e->next;
                 continue;
             }
             
@@ -726,10 +1144,10 @@ static void filedialog_update_iconview(
 
             gadgets[pos] = item;
             XmStringFree(str);
-            e = e->next;
             pos++;
         }
-        e = files;
+        ls = files;
+        count = filecount;
     }
     
     if(filter) {
@@ -743,21 +1161,21 @@ static void filedialog_update_iconview(
     resize_container(XtParent(data->container), data, NULL);
 }
 
-static void filelistwidget_add(Widget w, int showHidden, char *filter, FileList *ls, int count)
+static void filelistwidget_add(Widget w, int showHidden, char *filter, FileElm *ls, int count)
 {   
     if(count > 0) {
         XmStringTable items = NEditCalloc(count, sizeof(XmString));
         int i = 0;
-        FileList *e = ls;
-        while(e) {
+        
+        for(int j=0;j<count;j++) {
+            FileElm *e = &ls[j];
+            
             char *name = FileName(e->path);
             if((!showHidden && name[0] == '.') || fnmatch(filter, name, 0)) {
-                e = e->next;
                 continue;
             }
             
             items[i] = XmStringCreateLocalized(name);
-            e = e->next;
             i++;
         }
         XmListAddItems(w, items, i, 0);
@@ -768,22 +1186,11 @@ static void filelistwidget_add(Widget w, int showHidden, char *filter, FileList 
     }
 }
 
-static void filelist_free(FileList *list)
-{
-    FileList *l = list;
-    FileList *n = NULL;
-    while(l) {
-        NEditFree(l->path);
-        n = l->next;
-        NEditFree(l);
-        l = n;
-    }
-}
 
 static void filedialog_update_lists(
         FileDialogData *data,
-        FileList *dirs,
-        FileList *files,
+        FileElm *dirs,
+        FileElm *files,
         int dircount,
         int filecount,
         int maxnamelen)
@@ -802,40 +1209,187 @@ static void filedialog_update_lists(
     }
 }
 
+/*
+ * create file size string with kb/mb/gb/tb suffix
+ */
+static char* size_str(FileElm *f) {
+    char *str = malloc(16);
+    uint64_t size = f->size;
+    
+    if(f->isDirectory) {
+        str[0] = '\0';
+    } else if(size < 0x400) {
+        snprintf(str, 16, "%d bytes", (int)size);
+    } else if(size < 0x100000) {
+        float s = (float)size/0x400;
+        int diff = (s*100 - (int)s*100);
+        if(diff > 90) {
+            diff = 0;
+            s += 0.10f;
+        }
+        if(size < 0x2800 && diff != 0) {
+            // size < 10 KiB
+            snprintf(str, 16, "%.1f " KB_SUFFIX, s);
+        } else {
+            snprintf(str, 16, "%.0f " KB_SUFFIX, s);
+        }
+    } else if(size < 0x40000000) {
+        float s = (float)size/0x100000;
+        int diff = (s*100 - (int)s*100);
+        if(diff > 90) {
+            diff = 0;
+            s += 0.10f;
+        }
+        if(size < 0xa00000 && diff != 0) {
+            // size < 10 MiB
+            snprintf(str, 16, "%.1f " MB_SUFFIX, s);
+        } else {
+            size /= 0x100000;
+            snprintf(str, 16, "%.0f " MB_SUFFIX, s);
+        }
+    } else if(size < 0x1000000000ULL) {
+        float s = (float)size/0x40000000;
+        int diff = (s*100 - (int)s*100);
+        if(diff > 90) {
+            diff = 0;
+            s += 0.10f;
+        }
+        if(size < 0x280000000 && diff != 0) {
+            // size < 10 GiB
+            snprintf(str, 16, "%.1f " GB_SUFFIX, s);
+        } else {
+            size /= 0x40000000;
+            snprintf(str, 16, "%.0f " GB_SUFFIX, s);
+        }
+    } else {
+        size /= 1024;
+        float s = (float)size/0x40000000;
+        int diff = (s*100 - (int)s*100);
+        if(diff > 90) {
+            diff = 0;
+            s += 0.10f;
+        }
+        if(size < 0x280000000 && diff != 0) {
+            // size < 10 TiB
+            snprintf(str, 16, "%.1f " TB_SUFFIX, s);
+        } else {
+            size /= 0x40000000;
+            snprintf(str, 16, "%.0f " TB_SUFFIX, s);
+        }
+    }
+    return str;
+}
+
+static char* date_str(time_t tm) {
+    struct tm t;
+    struct tm n;
+    time_t now = time(NULL);
+    
+    localtime_r(&tm, &t);
+    localtime_r(&now, &n);
+    
+    char *str = malloc(16);
+    if(t.tm_year == n.tm_year) {
+        strftime(str, 16, DATE_FORMAT_SAME_YEAR, &t);
+    } else {
+        strftime(str, 16, DATE_FORMAT_OTHER_YEAR, &t);
+    }
+    return str;
+}
+
+static void filegridwidget_add(Widget grid, int showHidden, char *filter, FileElm *ls, int count, int maxWidth)
+{
+    XmLGridAddRows(grid, XmCONTENT, 1, count);
+    
+    int row = 0;
+    for(int i=0;i<count;i++) {
+        FileElm *e = &ls[i];
+        
+        char *name = FileName(e->path);
+        if((!showHidden && name[0] == '.') || (!e->isDirectory && fnmatch(filter, name, 0))) {
+            continue;
+        }
+        
+        // name
+        XmString str = XmStringCreateLocalized(name);
+        XtVaSetValues(grid,
+                XmNcolumn, 0, 
+                XmNrow, row,
+                XmNcellString, str, NULL);
+        XmStringFree(str);
+        // size
+        char *szbuf = size_str(e);
+        str = XmStringCreateLocalized(szbuf);
+        XtVaSetValues(grid,
+                XmNcolumn, 1, 
+                XmNrow, row,
+                XmNcellString, str, NULL);
+        free(szbuf);
+        XmStringFree(str);
+        // date
+        char *datebuf = date_str(e->lastModified);
+        str = XmStringCreateLocalized(datebuf);
+        XtVaSetValues(grid,
+                XmNcolumn, 2, 
+                XmNrow, row,
+                XmNcellString, str, NULL);
+        free(datebuf);
+        XmStringFree(str);
+        
+        XtVaSetValues(grid, XmNrow, row, XmNrowUserData, e, NULL);
+        row++;
+    }
+    
+    // remove unused rows
+    if(count > row) {
+        XmLGridDeleteRows(grid, XmCONTENT, row, count-row);
+    }
+    
+    if(maxWidth < 16) {
+        maxWidth = 16;
+    }
+    
+    XtVaSetValues(grid,
+        XmNcolumnRangeStart, 0,
+        XmNcolumnRangeEnd, 0,
+        XmNcolumnWidth, maxWidth,
+        XmNcellAlignment, XmALIGNMENT_LEFT,
+        XmNcolumnSizePolicy, XmVARIABLE,
+        NULL);
+    XtVaSetValues(grid,
+        XmNcolumnRangeStart, 1,
+        XmNcolumnRangeEnd, 1,
+        XmNcolumnWidth, 9,
+        XmNcellAlignment, XmALIGNMENT_LEFT,
+        XmNcolumnSizePolicy, XmVARIABLE,
+        NULL);
+    XtVaSetValues(grid,
+        XmNcolumnRangeStart, 2,
+        XmNcolumnRangeEnd, 2,
+        XmNcolumnWidth, 16,
+        XmNcellAlignment, XmALIGNMENT_RIGHT,
+        XmNcolumnSizePolicy, XmVARIABLE,
+        NULL);
+}
+
 static void filedialog_update_grid(
         FileDialogData *data,
-        FileList *dirs,
-        FileList *files,
+        FileElm *dirs,
+        FileElm *files,
         int dircount,
         int filecount,
         int maxnamelen)
 {
-    int row = 0;
-    
     char *filter = XmTextFieldGetString(data->filter);
     char *filterStr = filter;
     if(!filter || strlen(filter) == 0) {
         filterStr = "*";
     }
     
-    XmLGridAddRows(data->grid, XmCONTENT, 1, dircount+filecount);
-    FileList *e = dirs;
-    for(int i=0;i<2;i++) {
-        while(e) {
-            char *name = FileName(e->path);
-            XmString str = XmStringCreateLocalized(name);
-
-            XtVaSetValues(data->grid,
-                    XmNcolumn, 0, 
-                    XmNrow, row,
-                    XmNcellString, str, NULL);
-            XmStringFree(str);
-
-            row++;
-            e = e->next;
-        }
-        e = files;
-    }
+    // update dir list
+    filelistwidget_add(data->dirlist, data->showHidden, "*", dirs, dircount);
+    // update file detail grid
+    filegridwidget_add(data->grid, data->showHidden, filterStr, files, filecount, maxnamelen);
     
     if(filter) {
         XtFree(filter);
@@ -844,15 +1398,29 @@ static void filedialog_update_grid(
 
 static void cleanupGrid(FileDialogData *data)
 {
+    // cleanup dir list widget
+    XmListDeleteAllItems(data->dirlist);
+    
+    // cleanup grid
     Cardinal rows = 0;
     XtVaGetValues(data->grid, XmNrows, &rows, NULL);
     XmLGridDeleteRows(data->grid, XmCONTENT, 0, rows);
 }
 
+static void free_files(FileElm *ls, int count)
+{
+    for(int i=0;i<count;i++) {
+        if(ls[i].path) {
+            free(ls[i].path);
+        }
+    }
+    free(ls);
+}
+
 static void filedialog_cleanup_filedata(FileDialogData *data)
 {
-    filelist_free(data->dirs);
-    filelist_free(data->files);
+    free_files(data->dirs, data->dircount);
+    free_files(data->files, data->filecount);
     data->dirs = NULL;
     data->files = NULL;
     data->dircount = 0;
@@ -861,6 +1429,25 @@ static void filedialog_cleanup_filedata(FileDialogData *data)
 }
 
 #define FILEDIALOG_FALLBACK_PATH "/"
+
+#define FILE_ARRAY_SIZE 1024
+
+void file_array_add(FileElm **files, int *alloc, int *count, FileElm elm) {
+    int c = *count;
+    int a = *alloc;
+    if(c >= a) {
+        a *= 2;
+        FileElm *newarray = realloc(*files, sizeof(FileElm) * a);
+        
+        *files = newarray;
+        *alloc = a;
+    }
+    
+    (*files)[c] = elm;
+    c++;
+    *count = c;
+}
+
 static void filedialog_update_dir(FileDialogData *data, char *path)
 {
     Arg args[16];
@@ -890,12 +1477,14 @@ static void filedialog_update_dir(FileDialogData *data, char *path)
     
     /* read dir and insert items */
     if(path) {
-        FileList *dirs = NULL;
-        FileList *files = NULL;
+        FileElm *dirs = calloc(sizeof(FileElm), FILE_ARRAY_SIZE);
+        FileElm *files = calloc(sizeof(FileElm), FILE_ARRAY_SIZE);
+        int dirs_alloc = FILE_ARRAY_SIZE;
+        int files_alloc = FILE_ARRAY_SIZE;
+        
         int dircount = 0; 
         int filecount = 0;
         size_t maxNameLen = 0;
-        
         DIR *dir = opendir(path);
         if(!dir) {
             if(path == FILEDIALOG_FALLBACK_PATH) {
@@ -932,22 +1521,21 @@ static void filedialog_update_dir(FileDialogData *data, char *path)
                 continue;
             }
 
-            FileList *new_entry = NEditMalloc(sizeof(FileList));
-            new_entry->path = entpath;
-            new_entry->isDirectory = S_ISDIR(s.st_mode);
-            new_entry->next = NULL;
+            FileElm new_entry;
+            new_entry.path = entpath;
+            new_entry.isDirectory = S_ISDIR(s.st_mode);
+            new_entry.size = (uint64_t)s.st_size;
+            new_entry.lastModified = s.st_mtime;
 
             size_t nameLen = strlen(ent->d_name);
             if(nameLen > maxNameLen) {
                 maxNameLen = nameLen;
             }
 
-            if(new_entry->isDirectory) {
-                dirs = filelist_add(dirs, new_entry);
-                dircount++;
+            if(new_entry.isDirectory) {
+                file_array_add(&dirs, &dirs_alloc, &dircount, new_entry);
             } else {
-                files = filelist_add(files, new_entry);
-                filecount++;
+                file_array_add(&files, &files_alloc, &filecount, new_entry);
             }
         }
         closedir(dir);
@@ -957,6 +1545,10 @@ static void filedialog_update_dir(FileDialogData *data, char *path)
         data->dircount = dircount;
         data->filecount = filecount;
         data->maxnamelen = maxNameLen;
+        
+        // sort file arrays
+        qsort(dirs, dircount, sizeof(FileElm), filecmp);
+        qsort(files, filecount, sizeof(FileElm), filecmp);
     }
     
     update_view(data, data->dirs, data->files,
@@ -976,7 +1568,7 @@ static void filedialog_setselection(
         XmContainerSelectCallbackStruct *sel)
 {
     if(sel->selected_item_count > 0) {
-        FileList *file = NULL;
+        FileElm *file = NULL;
         XtVaGetValues(sel->selected_items[0], XmNuserData, &file, NULL);
         if(file) {
             if(data->selectedPath) {
@@ -1034,6 +1626,40 @@ char* set_selected_path(FileDialogData *data, XmString item)
     data->selectedPath = path;
     
     return path;
+}
+
+void set_path_from_row(FileDialogData *data, int row, Boolean update) {
+    FileElm *elm = NULL;
+    XmLGridRow rowPtr = XmLGridGetRow(data->grid, XmCONTENT, row);
+    XtVaGetValues(data->grid, XmNrowPtr, rowPtr, XmNrowUserData, &elm, NULL);
+    if(!elm) {
+        fprintf(stderr, "error: no row data\n");
+        return;
+    }
+    
+    char *path = NEditStrdup(elm->path);
+        
+    if(update) {
+        data->end = True;
+        data->status = FILEDIALOG_OK;
+        data->selIsDir = False;
+    }
+    if(data->type == FILEDIALOG_SAVE) {
+        XmTextFieldSetString(data->name, FileName(path));
+    }
+    
+    if(data->selectedPath) {
+        NEditFree(data->selectedPath);
+    }
+    data->selectedPath = path;
+}
+
+void grid_select(Widget w, FileDialogData *data, XmLGridCallbackStruct *cb) {
+    set_path_from_row(data, cb->row, False);
+}
+
+void grid_activate(Widget w, FileDialogData *data, XmLGridCallbackStruct *cb) {
+    set_path_from_row(data, cb->row, True);
 }
 
 void dirlist_activate(Widget w, FileDialogData *data, XmListCallbackStruct *cb)
@@ -1190,11 +1816,14 @@ static void unselect_view(FileDialogData *data)
         }
         case 1: {
             XtUnmanageChild(data->listform);
+            XtUnmanageChild(data->filelistcontainer);
             cleanupLists(data);
             break;
         }
         case 2: {
-            // TODO
+            XtUnmanageChild(data->listform);
+            XtUnmanageChild(data->gridcontainer);
+            cleanupGrid(data);
             break;
         }
     }
@@ -1214,6 +1843,7 @@ static void select_listview(Widget w, FileDialogData *data, XtPointer u)
     unselect_view(data);
     data->selectedview = 1;
     XtManageChild(data->listform);
+    XtManageChild(data->filelistcontainer);
     filedialog_update_dir(data, NULL);
 }
 
@@ -1221,8 +1851,45 @@ static void select_detailview(Widget w, FileDialogData *data, XtPointer u)
 {
     unselect_view(data);
     data->selectedview = 2;
-    XtManageChild(data->grid);
+    XtManageChild(data->listform);
+    XtManageChild(data->gridcontainer);
     filedialog_update_dir(data, NULL);
+}
+
+static void new_folder(Widget w, FileDialogData *data, XtPointer u)
+{
+    char fileName[DF_MAX_PROMPT_LENGTH];
+    fileName[0] = 0;
+    
+    int response = DialogF(
+            DF_PROMPT,
+            data->shell,
+            2,
+            "Create new directory", "Directory name:",
+            fileName,
+            "OK",
+            "Cancel");
+    
+    if(response == 2 || strlen(fileName) == 0) {
+        return;
+    }
+    
+    char *newFolder = ConcatPath(data->currentPath ? data->currentPath : "", fileName);
+    if(mkdir(newFolder, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)) {
+        DialogF(
+                DF_ERR,
+                data->shell,
+                1,
+                "Error creating Directory",
+                "Can't create %s:\n%s", "OK",
+                newFolder,
+                strerror(errno));
+    } else {
+        char *p = strdup(data->currentPath);
+        filedialog_update_dir(data, p);
+        free(p);
+    }
+    free(newFolder);
 }
 
 int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
@@ -1233,9 +1900,18 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     
     int currentEncItem = 0;
     
-    if(!pixmaps_initialized) {
-        initPixmaps(XtDisplay(parent), XtWindow(parent));
+    if(LastView == -1) {
+        LastView = GetFsbView();
+        if(LastView < 0 || LastView > 2) {
+            LastView = 1;
+        }
     }
+#ifndef FSB_ENABLE_DETAIL
+    if(LastView == 2) {
+        LastView = 1;
+    }
+#endif
+    Boolean showHiddenValue = GetFsbShowHidden();
     
     FileDialogData data;
     memset(&data, 0, sizeof(FileDialogData));
@@ -1246,6 +1922,7 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     
     Widget dialog = CreateDialogShell(parent, promptString, args, 0);
     AddMotifCloseCallback(dialog, (XtCallbackProc)filedialog_cancel, &data);
+    data.shell = dialog;
     
     n = 0;
     XtSetArg(args[n],  XmNautoUnmanage, False); n++;
@@ -1265,13 +1942,14 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     XtAddCallback(goUp, XmNactivateCallback,
                  (XtCallbackProc)filedialog_goup, &data);
     
+    // View Option Menu
     n = 0;
     XtSetArg(args[n], XmNtopAttachment, XmATTACH_FORM); n++;
     XtSetArg(args[n], XmNtopOffset, WINDOW_SPACING); n++;
     XtSetArg(args[n], XmNrightAttachment, XmATTACH_FORM); n++;
     XtSetArg(args[n], XmNrightOffset, WINDOW_SPACING); n++;
     XtSetArg(args[n], XmNshadowThickness, 0); n++;
-    Widget viewframe = XmCreateFrame(form, "vframe", args, n);
+    Widget viewframe = XmCreateForm(form, "vframe", args, n);
     XtManageChild(viewframe);
     
     XmString v0 = XmStringCreateLocalized("Icons");
@@ -1291,7 +1969,9 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     Widget mitem2 = XmCreatePushButton(menu, "menuitem", args, 2);
     XtManageChild(mitem0);
     XtManageChild(mitem1);
-    //XtManageChild(mitem2);
+#ifdef FSB_ENABLE_DETAIL
+    XtManageChild(mitem2);
+#endif
     XmStringFree(v0);
     XmStringFree(v1);
     XmStringFree(v2);
@@ -1310,12 +1990,57 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
             XmNactivateCallback,
             (XtCallbackProc)select_detailview,
             &data);
-    
+     
     n = 0;
     XtSetArg(args[n], XmNsubMenuId, menu); n++;
+    XtSetArg(args[n], XmNrightAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNmarginHeight, 0); n++;
+    XtSetArg(args[n], XmNmarginWidth, 0); n++;
     Widget view = XmCreateOptionMenu(viewframe, "option_menu", args, n);
     XtManageChild(view);
-
+    
+    n = 0;
+    XtSetArg(args[n], XmNleftAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNrightAttachment, XmATTACH_WIDGET); n++;
+    XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNtopAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNrightWidget, view); n++;
+    XtSetArg(args[n], XmNmarginHeight, 0); n++;
+    XtSetArg(args[n], XmNorientation, XmHORIZONTAL); n++;
+    Widget newFolder = XmCreatePushButton(viewframe, "newFolder", args, n);
+    XtManageChild(newFolder);
+    XtAddCallback(
+            newFolder,
+            XmNactivateCallback,
+            (XtCallbackProc)new_folder,
+            &data);
+    
+    Dimension xh;
+    Pixel buttonFg;
+    Pixel buttonBg;
+    XtVaGetValues(newFolder, XmNheight, &xh, XmNforeground, &buttonFg, XmNbackground, &buttonBg, NULL);
+    
+    // get rgb value of buttonBg
+    memset(&bgColor, 0, sizeof(XColor));
+    bgColor.pixel = buttonBg;
+    XQueryColor(XtDisplay(newFolder), newFolder->core.colormap, &bgColor);
+    
+    // init pixmaps after we got the background color
+    if(!pixmaps_initialized) {
+        initPixmaps(XtDisplay(parent), XtWindow(parent), newFolder->core.screen, newFolder->core.depth);
+    }
+    
+    if(pixmaps_error) {
+        XtVaSetValues(newFolder, XmNlabelType, XmSTRING, NULL);
+    } else if(xh > 32+BUTTON_EXTRA_SPACE) {
+        XtVaSetValues(newFolder, XmNlabelPixmap, newFolderIcon32, NULL);
+    } else if(xh > 24+BUTTON_EXTRA_SPACE) {
+        XtVaSetValues(newFolder, XmNlabelPixmap, newFolderIcon24, NULL);
+    } else {
+        XtVaSetValues(newFolder, XmNlabelPixmap, newFolderIcon16, NULL);
+    }
+    
+    // pathbar
     n = 0;
     XtSetArg(args[n], XmNtopAttachment, XmATTACH_FORM); n++;
     XtSetArg(args[n], XmNtopOffset, WINDOW_SPACING); n++;
@@ -1363,11 +2088,13 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     XtSetArg(args[n], XmNrightAttachment, XmATTACH_FORM); n++;
     XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
     XtSetArg(args[n], XmNlabelString, str); n++;
+    XtSetArg(args[n], XmNset, showHiddenValue); n++;
     Widget showHidden = XmCreateToggleButton(filterform, "showHidden", args, n);
     XtManageChild(showHidden);
     XmStringFree(str);
     XtAddCallback(showHidden, XmNvalueChangedCallback,
                  (XtCallbackProc)filedialog_setshowhidden, &data);
+    data.showHidden = showHiddenValue;
     
     n = 0;
     str = XmStringCreateLocalized("Filter");
@@ -1520,7 +2247,7 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
         char *defEncoding = type == FILEDIALOG_OPEN ? NULL : file->encoding;
         int hasDef = 0;
         int i;
-        for(i=skip;encStr=default_encodings[i];i++) {
+        for(i=skip;(encStr=default_encodings[i]);i++) {
             if(i >= arraylen) {
                 arraylen *= 2;
                 encodings = NEditRealloc(encodings, arraylen * sizeof(XmString));
@@ -1621,17 +2348,6 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     Widget scrollw = XmCreateScrolledWindow(form, "scroll_win", args, n);
     data.scrollw = scrollw;
     
-    // detail view
-    n = layout;
-    XtSetArg(args[n], XmNcolumns, 3); n++;
-    XtSetArg(args[n], XmNheadingColumns, 0); n++;
-    XtSetArg(args[n], XmNheadingRows, 1); n++;
-    XtSetArg(args[n], XmNallowColumnResize, 1); n++;
-    XtSetArg(args[n], XmNsimpleWidths, "40c 15c 25c"); n++;
-    data.grid = XmLCreateGrid(form, "grid", args, n);
-    XmLGridSetStrings(data.grid, "Name|Size|Last Modified");
-    
-    // icon view again
     n = 0;
     XtSetArg(args[n], XmNlayoutType,  XmSPATIAL); n++;
     XtSetArg(args[n], XmNselectionPolicy, XmSINGLE_SELECT); n++;
@@ -1699,7 +2415,11 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     XtSetArg(args[n], XmNleftAttachment, XmATTACH_WIDGET); n++;
     XtSetArg(args[n], XmNleftWidget, data.dirlist); n++;
     XtSetArg(args[n], XmNleftOffset, WIDGET_SPACING); n++;
-    data.filelist = XmCreateScrolledList(data.listform, "filelist", args, n);
+    XtSetArg(args[n], XmNshadowThickness, 0); n++;
+    data.filelistcontainer = XmCreateFrame(data.listform, "filelistframe", args, n);
+    //XtManageChild(data.filelistcontainer);
+    
+    data.filelist = XmCreateScrolledList(data.filelistcontainer, "filelist", NULL, 0);
     XtManageChild(data.filelist);
     XtAddCallback(
             data.filelist,
@@ -1711,6 +2431,38 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
             XmNbrowseSelectionCallback,
             (XtCallbackProc)filelist_select,
             &data);
+    
+    // Detail FileList
+    // the detail view shares widgets with the list view
+    // switching between list and detail view only changes
+    // filelistcontainer <-> gridcontainer
+    n = 0;
+    XtSetArg(args[n], XmNrightAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNtopAttachment, XmATTACH_WIDGET); n++;
+    XtSetArg(args[n], XmNtopWidget, lsDirLabel); n++;
+    XtSetArg(args[n], XmNtopOffset, WIDGET_SPACING); n++;
+    XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNleftAttachment, XmATTACH_WIDGET); n++;
+    XtSetArg(args[n], XmNleftWidget, data.dirlist); n++;
+    XtSetArg(args[n], XmNleftOffset, WIDGET_SPACING); n++;
+    XtSetArg(args[n], XmNshadowThickness, 0); n++;
+    data.gridcontainer = XmCreateFrame(data.listform, "gridcontainer", args, n);
+    //XtManageChild(data.gridcontainer);
+    
+    n = 0;
+    XtSetArg(args[n], XmNcolumns, 3); n++;
+    XtSetArg(args[n], XmNheadingColumns, 0); n++;
+    XtSetArg(args[n], XmNheadingRows, 1); n++;
+    XtSetArg(args[n], XmNallowColumnResize, 1); n++;
+    XtSetArg(args[n], XmNhorizontalSizePolicy, XmCONSTANT); n++;
+    
+    data.grid = XmLCreateGrid(data.gridcontainer, "grid", args, n);
+    XtManageChild(data.grid);
+    
+    XmLGridSetStrings(data.grid, "Name|Size|Last Modified");
+    XtAddCallback(data.grid, XmNselectCallback, (XtCallbackProc)grid_select, &data);
+    XtAddCallback(data.grid, XmNactivateCallback, (XtCallbackProc)grid_activate, &data);
+    
     
     n = 0;
     str = XmStringCreateLocalized("Files");
@@ -1729,15 +2481,26 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     Widget focus = NULL;
     switch(data.selectedview) {
         case 0: XtManageChild(scrollw); focus = data.container; break;
-        case 1: XtManageChild(data.listform); focus = data.filelist; break;
-        case 2: XtManageChild(data.grid); break;
+        case 1: XtManageChild(data.listform); XtManageChild(data.filelistcontainer); focus = data.filelist; break;
+        case 2: XtManageChild(data.listform); XtManageChild(data.gridcontainer); focus = data.grid; break;
     }
     
-    char *defDirStr = GetDefaultDirectoryStr();
-    char *defDir = defDirStr ? defDirStr : getenv("HOME");
+    if(file->path) {
+        char *defDir = ParentPath(file->path);
+        filedialog_update_dir(&data, defDir);
+        PathBarSetPath(data.pathBar, defDir);
+        NEditFree(defDir);
+        
+        XmTextFieldSetString(data.name, FileName(file->path));
+    } else {
+        char *defDirStr = GetDefaultDirectoryStr();
+        char *defDir = defDirStr ? defDirStr : getenv("HOME");
+        
+        filedialog_update_dir(&data, defDir);
+        PathBarSetPath(data.pathBar, defDir);
+    }
+    
     //init_container_size(&data);
-    filedialog_update_dir(&data, defDir);
-    PathBarSetPath(data.pathBar, defDir);
     
     /* event loop */
     ManageDialogCenteredOnPointer(form);
