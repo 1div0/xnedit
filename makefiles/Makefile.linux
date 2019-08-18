@@ -43,6 +43,9 @@ ifdef ABI
 CFLAGS += -m$(ABI)
 endif
 
+#CFLAGS += --save-temps
+CFLAGS += -g
+
 OPTFLAGS = -O1 -march=$(CPU) -mtune=$(CPU)
 
 ARFLAGS = -urs
