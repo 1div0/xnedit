@@ -552,7 +552,7 @@ int main(int argc, char **argv)
        Users can set this variable before starting NEdit, but it is much 
        more convenient that NEdit takes care of this. This must be done before
        the display is opened (empirically verified). */
-    putenv("XLIB_SKIP_ARGB_VISUALS=1");
+    /* putenv("XLIB_SKIP_ARGB_VISUALS=1"); */
     TheDisplay = XtOpenDisplay (context, NULL, APP_NAME, APP_CLASS,
 	    NULL, 0, &argc, argv);
     unmaskArgvKeywords(argc, argv, protectedKeywords);
