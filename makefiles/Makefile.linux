@@ -43,9 +43,11 @@ ifdef ABI
 CFLAGS += -m$(ABI)
 endif
 
-OPTFLAGS = -O1 -march=$(CPU) -mtune=$(CPU)
+OPTFLAGS = -O3 -march=$(CPU) -mtune=$(CPU)
 
 ARFLAGS = -urs
+
+LDFLAGS = --lto
 
 XNCLIBS = -lXt -lX11 -lm
 XNEDITLIBS = -L$(MOTIF)/lib$(ABI) -lXm -lXt -lX11 -lXrender -lXp -lXpm -lXext -lSM -lICE -lm $(shell pkg-config --libs xft fontconfig)
