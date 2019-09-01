@@ -57,6 +57,9 @@
 #if defined(__alpha) || defined (_M_ALPHA)
 #   define COMPILE_MACHINE "Alpha"
 
+#elif defined(__ARM_ARCH_8A)
+#   define COMPILE_MACHINE "ARMv8-A"
+
 #elif defined(__arm__)
 #   define COMPILE_MACHINE "ARM"
 
