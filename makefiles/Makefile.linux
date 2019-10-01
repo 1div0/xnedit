@@ -45,6 +45,13 @@ endif
 
 OPTFLAGS = -O3 -march=$(CPU) -mtune=$(CPU)
 
+ifdef DEBUG
+CFLAGS += -DDEBUG=$(DEBUG) -g
+#CFLAGS += -save-temps
+else
+OPTFLAGS += -fomit-frame-pointer
+endif
+
 ARFLAGS = -urs
 
 LDFLAGS = --lto
