@@ -37,6 +37,7 @@
 #include "nedit.h"
 #include "calltips.h"
 #include "../util/DialogF.h"
+#include "../util/xdnd.h"
 #include "window.h"
 #include "preferences.h"
 #include "../util/nedit_malloc.h"
@@ -585,7 +586,7 @@ static XtActionsRec actionsList[] = {
     {"insert_string", insertStringAP},
     {"mouse_pan", mousePanAP},
     {"zoom_in", zoomInAP},
-    {"zoom_out", zoomOutAP},
+    {"zoom_out", zoomOutAP}
 };
 
 /* The motif text widget defined a bunch of actions which the nedit text
@@ -797,7 +798,7 @@ void TextWidgetClassInit(Display *dp, const char *fontname)
             fprintf(stderr, "Cannot open default font\n");
             exit(1);
         }
-    }
+    } 
 }
 
 /*
@@ -1239,6 +1240,8 @@ static void realize(Widget w, XtValueMask *valueMask,
     }
     
     TextDInitXft(text->text.textD);
+    
+    XdndEnable(w);
 }
 
 /*
@@ -3451,35 +3454,10 @@ static void focusOutAP(Widget w, XEvent *event, String *args, Cardinal *nArgs)
     XtCallCallbacks((Widget)w, textNlosingFocusCallback, (XtPointer)event);
 }
 
-#define MIN_FONT_SIZE 2
-#define MAX_FONT_SIZE 800
 
 static void zoom(Widget w, int step) {
     WindowInfo *win = WidgetToWindow(w);
-    
-    int font_sz = win->font->size + step;
-    int italic_sz = win->italicFont->size + step;
-    int bold_sz = win->boldFont->size + step;
-    int bolditalic_sz = win->italicFont->size + step;
-    
-    if(
-            font_sz < MIN_FONT_SIZE || italic_sz < MIN_FONT_SIZE ||
-            bold_sz < MIN_FONT_SIZE || bolditalic_sz < MIN_FONT_SIZE ||
-            font_sz > MAX_FONT_SIZE || italic_sz > MAX_FONT_SIZE ||
-            bold_sz > MAX_FONT_SIZE || bolditalic_sz > MAX_FONT_SIZE)
-    {
-        return;
-    }
-    
-    char *font = ChangeFontSize(win->fontName, font_sz);
-    char *italic = ChangeFontSize(win->italicFontName, italic_sz);
-    char *bold = ChangeFontSize(win->boldFontName, italic_sz);
-    char *bolditalic = ChangeFontSize(win->boldItalicFontName, italic_sz);
-    
-    Boolean rz = win->resizeOnFontChange;
-    win->resizeOnFontChange = False; // disable window resizing on font change
-    SetFonts(win, font, italic, bold, bolditalic);
-    win->resizeOnFontChange = rz;
+    SetZoom(win, step);
 }
 
 static void zoomInAP(Widget w, XEvent *event, String *args, Cardinal *nArgs) {

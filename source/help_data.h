@@ -2,10 +2,10 @@
 *                                                                              *
 * help_data.h --  Nirvana Editor help module data                              *
 *                                                                              *
-                 Generated on Aug 18, 2019 (Do NOT edit!)
+                 Generated on Mar 8, 2020 (Do NOT edit!)
                  Source of content from file help.etx
 *                                                                              *
-* Copyright (c) 1999-2019 Mark Edel                                            *
+* Copyright (c) 1999-2020 Mark Edel                                            *
 *                                                                              *
 * This is free software; you can redistribute it and/or modify it under the    *
 * terms of the GNU General Public License as published by the Free Software    *
@@ -804,8 +804,7 @@ static char * htxt_format [] = {
 "challenge to portability, they affect XNEdit only indirectly via the same font ",
 "and localization mechanisms common to all X applications.  If your system is ",
 "set up properly, you will probably never see character-set related problems ",
-"in XNEdit.  XNEdit cannot display Unicode text files, nor any multi-byte ",
-"character set. ",
+"in XNEdit. ",
 "\n\n",
 "The primary difference between an MS DOS format file and a Unix format file, ",
 "is how the lines are terminated.  Unix uses a single newline character.  MS ",
@@ -5759,4 +5758,4 @@ Href H_R [] =
     {NULL,     14819, HELP_PREFERENCES,   "Autoload Files"}
 };
 
-static const char * NEditVersion = "XNEdit 1.1.1\nAug 18, 2019\n";
+static const char * NEditVersion = "XNEdit 1.2.0\nMar 8, 2020\n";

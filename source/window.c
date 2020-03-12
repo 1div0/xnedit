@@ -202,11 +202,43 @@ static void cancelTimeOut(XtIntervalId *timer);
 
 static void WindowTakeFocus(Widget shell, WindowInfo *window, XtPointer d);
 
+static void closeInfoBarCB(Widget w, Widget mainWin, void *callData);
+static void reloadCB(Widget w, Widget mainWin, void *callData);
+
 /* From Xt, Shell.c, "BIGSIZE" */
 static const Dimension XT_IGNORE_PPOSITION = 32767;
 
 static Atom wm_take_focus;
 static int take_focus_atom_is_init = 0;
+
+// TODO: remove code dup (filadialog.c)
+#define DETECT_ENCODING "detect"
+static char *default_encodings[] = {
+    DETECT_ENCODING,
+    "UTF-8",
+    "UTF-16",
+    "UTF-16BE",
+    "UTF-16LE",
+    "UTF-32",
+    "UTF-32BE",
+    "UTF-32LE",
+    "ISO8859-1",
+    "ISO8859-2",
+    "ISO8859-3",
+    "ISO8859-4",
+    "ISO8859-5",
+    "ISO8859-6",
+    "ISO8859-7",
+    "ISO8859-8",
+    "ISO8859-9",
+    "ISO8859-10",
+    "ISO8859-13",
+    "ISO8859-14",
+    "ISO8859-15",
+    "ISO8859-16",
+    NULL
+};
+
 
 /*
 ** Create a new editor window
@@ -295,6 +327,7 @@ WindowInfo *CreateWindow(const char *name, char *geometry, int iconic)
     window->showStats = GetPrefStatsLine();
     window->showISearchLine = GetPrefISearchLine();
     window->showLineNumbers = GetPrefLineNums();
+    window->showInfoBar = False;
     window->highlightSyntax = GetPrefHighlightSyntax();
     window->backlightCharTypes = NULL;
     window->backlightChars = GetPrefBacklightChars();
@@ -429,7 +462,8 @@ WindowInfo *CreateWindow(const char *name, char *geometry, int iconic)
     window->mainWin = mainWin;
     XtManageChild(mainWin);
     
-    /* The statsAreaForm holds the stats line and the I-Search line. */
+    // The statsAreaForm holds the stats line, the I-Search line
+    // and the encodingInfoBar
     statsAreaForm = XtVaCreateWidget("statsAreaForm", 
             xmFormWidgetClass, mainWin,
             XmNmarginWidth, STAT_SHADOW_THICKNESS,
@@ -645,7 +679,7 @@ WindowInfo *CreateWindow(const char *name, char *geometry, int iconic)
             XmNtopWidget, window->iSearchForm,
             XmNrightAttachment, XmATTACH_FORM,
             XmNleftAttachment, XmATTACH_FORM,
-            XmNbottomAttachment, XmATTACH_FORM,
+            //XmNbottomAttachment, XmATTACH_FORM,
             XmNresizable, False,    /*  */
             NULL);
     
@@ -704,7 +738,78 @@ WindowInfo *CreateWindow(const char *name, char *geometry, int iconic)
     /* Manage the statsLineForm */
     if(window->showStats)
         XtManageChild(window->statsLineForm);
+    
+    // Create encodingInfoBar form
+    window->encodingInfoBar = XtVaCreateWidget(
+            "infobar",
+            xmFormWidgetClass,
+            statsAreaForm,
+            XmNtopAttachment, XmATTACH_WIDGET,
+            XmNtopWidget, window->statsLineForm,
+            XmNbottomAttachment, XmATTACH_FORM,
+            XmNrightAttachment, XmATTACH_FORM,
+            XmNleftAttachment, XmATTACH_FORM,
+            NULL);
+    
+    // create encoding dropdown list 
+    ac = 0;
+    XtSetArg(al[ac], XmNcolumns, 15); ac++;
 
+    XtSetArg(al[ac], XmNrightAttachment, XmATTACH_FORM); ac++;
+    XtSetArg(al[ac], XmNbottomAttachment, XmATTACH_FORM); ac++;
+    XtSetArg(al[ac], XmNhighlightThickness, 1); ac++;
+    window->encInfoBarList = XmCreateDropDownList(
+            window->encodingInfoBar,
+            "combobox",
+            al,
+            ac);
+    XtManageChild(window->encInfoBarList);
+    
+    // infobar label
+    window->encInfoBarLabel = XtVaCreateManagedWidget(
+            "ibarlabel",
+            xmLabelWidgetClass,
+            window->encodingInfoBar,
+            XmNleftAttachment, XmATTACH_FORM,
+            XmNtopAttachment, XmATTACH_FORM,
+            XmNbottomAttachment, XmATTACH_WIDGET,
+            XmNbottomWidget, window->encInfoBarList,
+            NULL);
+    
+    Widget btnClose = XtVaCreateManagedWidget(
+            "ibarbutton",
+            xmPushButtonWidgetClass,
+            window->encodingInfoBar,
+            XmNlabelType, XmPIXMAP,
+            XmNlabelPixmap, closeTabPixmap,
+            XmNtopAttachment, XmATTACH_WIDGET,
+            XmNrightAttachment, XmATTACH_FORM,
+            XmNbottomAttachment, XmATTACH_WIDGET,
+            XmNbottomWidget, window->encInfoBarList,
+            XmNhighlightThickness, 1,
+            NULL);
+    XtAddCallback(btnClose, XmNactivateCallback, (XtCallbackProc)closeInfoBarCB, 
+	    mainWin);
+    
+    s1 = XmStringCreateSimple("Reload");
+    Widget btnReload = XtVaCreateManagedWidget(
+            "ibarbutton",
+            xmPushButtonWidgetClass,
+            window->encodingInfoBar,
+            XmNlabelString, s1,
+            XmNtopAttachment, XmATTACH_WIDGET,
+            XmNrightAttachment, XmATTACH_WIDGET,
+            XmNrightWidget, btnClose,
+            XmNbottomAttachment, XmATTACH_WIDGET,
+            XmNbottomWidget, window->encInfoBarList,
+            XmNleftAttachment, XmATTACH_OPPOSITE_WIDGET,
+            XmNleftWidget, window->encInfoBarList,
+            XmNhighlightThickness, 1,
+            NULL);
+    XtAddCallback(btnReload, XmNactivateCallback, (XtCallbackProc)reloadCB, 
+	    mainWin);
+    XmStringFree(s1);
+    
     /* Create the menu bar */
     menuBar = CreateMenuBar(mainWin, window);
     window->menuBar = menuBar;
@@ -785,8 +890,10 @@ WindowInfo *CreateWindow(const char *name, char *geometry, int iconic)
     manageToolBars(statsAreaForm);
 
     if (showTabBar || window->showISearchLine || 
-    	    window->showStats)
+    	    window->showStats || window->showInfoBar)
+    {
         XtManageChild(statsAreaForm);
+    }
     
     /* realize all of the widgets in the new window */
     RealizeWithoutForcingPosition(winShell);
@@ -1475,6 +1582,89 @@ void ShowLineNumbers(WindowInfo *window, int state)
     /* Tell WM that the non-expandable part of the window has changed size */
     UpdateWMSizeHints(window);
 }
+
+/*
+** Turn on and off the display of the encoding infobar
+*/
+void ShowEncodingInfoBar(WindowInfo *window, int state)
+{
+    if (window->showInfoBar == state && XtIsManaged(window->encodingInfoBar) == state) {
+        return;
+    }
+    window->showInfoBar = state;
+    
+    if(state == 0) {
+        XtUnmanageChild(window->encodingInfoBar);
+        showStatsForm(window);
+        return;
+    }
+    
+    // current document encoding
+    char *def = strlen(window->encoding) > 0 ? window->encoding : NULL;
+    
+    int arraylen = 22;
+    XmStringTable encodings = NEditCalloc(arraylen, sizeof(XmString));
+    char *encStr;
+    int i;
+    int index = 0;
+    
+    // add default encodings
+    for(i=0;(encStr=default_encodings[i]);i++) {
+        if(i >= arraylen) {
+            arraylen *= 2;
+            encodings = NEditRealloc(encodings, arraylen * sizeof(XmString));
+        }
+        encodings[i] = XmStringCreateSimple(encStr);
+        
+        if(def) {
+            if(!strcasecmp(def, encStr)) {
+                def = NULL;
+                index = i;
+            }
+        }
+    }
+    
+    // add document encoding, if it isn't already in the list
+    if(def) {
+        if(i >= arraylen) {
+            arraylen += 2;
+            encodings = NEditRealloc(encodings, arraylen * sizeof(XmString));
+        }
+        encodings[i] = XmStringCreateSimple(def);
+        index = i;
+        i++;
+    }
+    
+    // set dropdownlist values
+    XtVaSetValues(
+            window->encInfoBarList,
+            XmNitemCount, i,
+            XmNitems, encodings,
+            NULL);
+    XmComboBoxSelectItem(window->encInfoBarList, encodings[index]);
+    
+    // cleanup
+    for(int j=0;j<i;j++) {
+        XmStringFree(encodings[j]);
+    }
+    NEditFree(encodings);
+    
+    // show infobar
+    XtManageChild(window->encodingInfoBar);
+    
+    showStatsForm(window);
+}
+
+/*
+ * Set the text message for the encoding infobar
+ */
+void SetEncodingInfoBarLabel(WindowInfo *window, char *message)
+{
+    XmString s1 = XmStringCreateLocalized(message);
+    XtVaSetValues(window->encInfoBarLabel, XmNlabelString, s1, NULL);
+    XmStringFree(s1);
+}
+
 
 void SetTabDist(WindowInfo *window, int tabDist)
 {
@@ -2335,7 +2525,7 @@ static Widget createTextArea(Widget parent, WindowInfo *window, int rows,
             textNhidePointer, (Boolean) GetPrefTypingHidesPointer(),
             textNcursorVPadding, GetVerticalAutoScroll(),
             NULL);
-
+    
     XtVaSetValues(sw, XmNworkWindow, frame, XmNhorizontalScrollBar, 
                     hScrollBar, XmNverticalScrollBar, vScrollBar, NULL);
 
@@ -3364,6 +3554,8 @@ WindowInfo* CreateDocument(WindowInfo* shellWindow, const char* name)
     window->showStats = GetPrefStatsLine();
     window->showISearchLine = GetPrefISearchLine();
 #endif
+    
+    window->showInfoBar = FALSE;
 
     window->multiFileReplSelected = FALSE;
     window->multiFileBusy = FALSE;
@@ -3429,6 +3621,7 @@ WindowInfo* CreateDocument(WindowInfo* shellWindow, const char* name)
     window->italicFont = FontRef(GetPrefItalicFont());
     window->boldFont = FontRef(GetPrefBoldFont());
     window->boldItalicFont = FontRef(GetPrefBoldItalicFont());
+    window->zoom = 0;
     window->fontDialog = NULL;
     window->nMarks = 0;
     window->markTimeoutID = 0;
@@ -3711,6 +3904,296 @@ void RefreshTabState(WindowInfo *win)
     XmStringFree(tipString);
 }
 
+
+typedef struct SaveFilesData {
+    Widget shell;
+    
+    int status; /* 0: save, 1: don't save, 2: cancel */
+    int end;
+} SaveFilesData;
+
+void savefiles_save(Widget w, SaveFilesData *data, XtPointer d)
+{
+    data->status = 0;
+    data->end = 1;
+}
+
+void savefiles_dontsave(Widget w, SaveFilesData *data, XtPointer d)
+{
+    data->status = 1;
+    data->end = 1;
+}
+
+void savefiles_cancel(Widget w, SaveFilesData *data, XtPointer d)
+{
+    data->status = 2;
+    data->end = 1;
+}
+
+#define WIDGET_SPACING 5
+#define WINDOW_SPACING 8
+
+/*
+ * Shows a dialog, where all files, that should be saved, can be selected
+ * If 'save' is clicked, all selected files will be saved
+ */
+int SaveFilesDialog(WindowInfo *window)
+{
+    Arg args[32];
+    int n = 0;
+    XmString str;
+    
+    Widget winShell = window->shell;
+    
+    Widget dialog = CreateDialogShell(window->shell, "Save Files", args, 0);
+    
+    SaveFilesData data;
+    memset(&data, 0, sizeof(SaveFilesData));
+    data.shell = dialog;
+    
+    AddMotifCloseCallback(dialog, (XtCallbackProc)savefiles_cancel, &data);
+    
+    // create dialog
+    n = 0;
+    XtSetArg(args[0], XmNshadowThickness, 0); n++;
+    Widget form = XmCreateForm(dialog, "form", args, n);
+    
+    
+    
+    // bottom buttons form
+    n = 0;
+    XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNleftAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNrightAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNshadowThickness, 1); n++;
+    XtSetArg(args[n], XmNshadowType, XmSHADOW_ETCHED_OUT); n++;
+    Widget buttons = XmCreateForm(form, "btnform", args, n);
+    XtManageChild(buttons);
+    
+    n = 0;
+    str = XmStringCreateLocalized("Save");
+    XtSetArg(args[n], XmNleftAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNleftOffset, WINDOW_SPACING); n++;
+    XtSetArg(args[n], XmNrightOffset, WIDGET_SPACING); n++;
+    XtSetArg(args[n], XmNrightAttachment, XmATTACH_POSITION); n++;
+    XtSetArg(args[n], XmNrightPosition, 33); n++;
+    XtSetArg(args[n], XmNlabelString, str); n++;
+    XtSetArg(args[n], XmNtopAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNtopOffset, WIDGET_SPACING); n++;
+    XtSetArg(args[n], XmNbottomOffset, WINDOW_SPACING); n++;
+    Widget btnSave = XmCreatePushButton(buttons, "button", args, n);
+    XtManageChild(btnSave);
+    XmStringFree(str);
+    
+    n = 0;
+    str = XmStringCreateLocalized("Don't Save");
+    XtSetArg(args[n], XmNleftAttachment, XmATTACH_POSITION); n++;
+    XtSetArg(args[n], XmNleftPosition, 33); n++;
+    XtSetArg(args[n], XmNrightAttachment, XmATTACH_POSITION); n++;
+    XtSetArg(args[n], XmNrightPosition, 66); n++;
+    XtSetArg(args[n], XmNlabelString, str); n++;
+    XtSetArg(args[n], XmNleftOffset, WINDOW_SPACING); n++;
+    XtSetArg(args[n], XmNrightOffset, WINDOW_SPACING); n++;
+    XtSetArg(args[n], XmNtopAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNtopOffset, WIDGET_SPACING); n++;
+    XtSetArg(args[n], XmNbottomOffset, WINDOW_SPACING); n++;
+    Widget btnDontSave = XmCreatePushButton(buttons, "button", args, n);
+    XtManageChild(btnDontSave);
+    XmStringFree(str);
+    
+    n = 0;
+    str = XmStringCreateLocalized("Cancel");
+    XtSetArg(args[n], XmNleftAttachment, XmATTACH_POSITION); n++;
+    XtSetArg(args[n], XmNleftPosition, 66); n++;
+    XtSetArg(args[n], XmNrightAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNlabelString, str); n++;
+    XtSetArg(args[n], XmNtopAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNtopOffset, WIDGET_SPACING); n++;
+    XtSetArg(args[n], XmNbottomOffset, WINDOW_SPACING); n++;
+    XtSetArg(args[n], XmNleftOffset, WIDGET_SPACING); n++;
+    XtSetArg(args[n], XmNrightOffset, WINDOW_SPACING); n++;
+    Widget btnCancel = XmCreatePushButton(buttons, "button", args, n);
+    XtManageChild(btnCancel);
+    XmStringFree(str);
+
+    n = 0;
+    XtSetArg(args[n], XmNleftAttachment, XmATTACH_WIDGET); n++;
+    XtSetArg(args[n], XmNleftWidget, btnDontSave); n++;
+    XtSetArg(args[n], XmNrightAttachment, XmATTACH_WIDGET); n++;
+    XtSetArg(args[n], XmNrightWidget, btnCancel); n++;
+    XtSetArg(args[n], XmNrightOffset, WINDOW_SPACING); n++;
+    XtSetArg(args[n], XmNtopAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNtopOffset, WIDGET_SPACING); n++;
+    XtSetArg(args[n], XmNbottomOffset, WIDGET_SPACING); n++;
+    XtSetArg(args[n], XmNseparatorType, XmNO_LINE); n++;
+    Widget space = XmCreateSeparator(buttons, "space", args, n);
+    XtManageChild(space);
+    
+    n = 0;
+    XtSetArg(args[n], XmNtopAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNleftAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNrightAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNbottomAttachment, XmATTACH_WIDGET); n++;
+    XtSetArg(args[n], XmNbottomWidget, buttons); n++;
+    XtSetArg(args[n], XmNshadowThickness, 1); n++;
+    XtSetArg(args[n], XmNshadowType, XmSHADOW_ETCHED_OUT); n++;
+    Widget topForm = XmCreateForm(form, "frame", args, n);
+    XtManageChild(topForm);
+    
+    // top label
+    n = 0;
+    str = XmStringCreateLocalized("Save files before closing?");
+    XtSetArg(args[n], XmNtopAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNtopOffset, WINDOW_SPACING); n++;
+    XtSetArg(args[n], XmNleftAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNleftOffset, WINDOW_SPACING); n++;
+    XtSetArg(args[n], XmNlabelString, str); n++;
+    Widget label = XmCreateLabel(topForm, "label", args, n);
+    XtManageChild(label);
+    XmStringFree(str);
+    
+    
+    // create the ScrolledWindow for the documents checkboxes 
+    n = 0;
+    XtSetArg(args[n], XmNtopAttachment, XmATTACH_WIDGET); n++;
+    XtSetArg(args[n], XmNtopWidget, label); n++;
+    XtSetArg(args[n], XmNleftAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNrightAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNbottomAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNtopOffset, WINDOW_SPACING); n++;
+    XtSetArg(args[n], XmNleftOffset, WINDOW_SPACING); n++;
+    XtSetArg(args[n], XmNrightOffset, WINDOW_SPACING); n++;
+    XtSetArg(args[n], XmNbottomOffset, WINDOW_SPACING); n++;
+    XtSetArg(args[n], XmNscrollBarDisplayPolicy, XmAS_NEEDED); n++;
+    XtSetArg(args[n], XmNscrollingPolicy, XmAUTOMATIC); n++;
+    XtSetArg(args[n], XmNshadowThickness, 1); n++;
+    Widget scrollW = XmCreateScrolledWindow(topForm, "scrolledwindow", args, n);
+    XtManageChild(scrollW);
+    
+    n = 0;
+    XtSetArg(args[n], XmNshadowThickness, 0); n++;
+    Widget docForm = XmCreateForm(scrollW, "form", args, n);
+    
+    // create togglebuttons for unsaved documents
+    size_t dalloc = 64;
+    size_t dsize = 0;
+    Widget *docButtons = NEditCalloc(dalloc, sizeof(Widget));
+    
+    n = 0;
+    XtSetArg(args[n], XmNleftAttachment, XmATTACH_FORM); n++;
+    XtSetArg(args[n], XmNleftOffset, WIDGET_SPACING); n++;
+    XtSetArg(args[n], XmNtopOffset, WIDGET_SPACING); n++;
+    XtSetArg(args[n], XmNset, 1); n++;
+    int k = n;
+    Widget topWid = NULL;
+    for (WindowInfo *win=WindowList;win;win=win->next) {
+        if(win->shell == winShell && win->fileChanged) {
+            n = k;
+            str = XmStringCreateLocalized(win->filename);
+            XtSetArg(args[n], XmNlabelString, str); n++;
+            XtSetArg(args[n], XmNuserData, win); n++;
+            if(topWid) {
+                XtSetArg(args[n], XmNtopAttachment, XmATTACH_WIDGET); n++;
+                XtSetArg(args[n], XmNtopWidget, topWid); n++;
+            } else {
+                XtSetArg(args[n], XmNtopAttachment, XmATTACH_FORM); n++;
+            }
+            topWid = XmCreateToggleButton(docForm, "sfbutton", args, n);
+            XtManageChild(topWid);            
+            XmStringFree(str);
+            
+            // add togglebutton to the array
+            if(dsize >= dalloc) {
+                dalloc += 64;
+                docButtons = NEditRealloc(docButtons, dalloc * sizeof(Widget));
+            }
+            docButtons[dsize++] = topWid;
+        }
+    }
+    XtManageChild(docForm);
+    
+    
+    // checkbox form
+    n = 0;
+    Widget cbForm = XmCreateForm(scrollW, "cbform", args, n);
+    XtManageChild(cbForm);
+    
+    Widget b1 = XmCreatePushButton(cbForm, "button", args, 0);
+    XtManageChild(b1);
+    
+    XtVaSetValues(
+            buttons,
+            XmNdefaultButton,
+            btnSave,
+            XmNcancelButton,
+            btnCancel,
+            NULL);
+    
+    // event handler
+    XtAddCallback(
+            btnSave,
+            XmNactivateCallback,
+            (XtCallbackProc)savefiles_save,
+            &data);
+    XtAddCallback(
+            btnDontSave,
+            XmNactivateCallback,
+            (XtCallbackProc)savefiles_dontsave,
+            &data);
+    XtAddCallback(
+            btnCancel,
+            XmNactivateCallback,
+            (XtCallbackProc)savefiles_cancel,
+            &data);
+    
+    // show dialog
+    if(dsize > 0) {
+        ManageDialogCenteredOnPointer(form);
+    
+        XmProcessTraversal(buttons, XmTRAVERSE_CURRENT);
+
+        XtAppContext app = XtWidgetToApplicationContext(dialog);
+        while(!data.end && !XtAppGetExitFlag(app)) {
+            XEvent event;
+            XtAppNextEvent(app, &event);
+            XtDispatchEvent(&event);
+        }
+    } // else: no unsaved documents
+    
+    XtUnmapWidget(dialog);
+    
+    // data.status == 0 --> save selected files
+    int save = data.status == 0 ?
+        YES_SBC_DIALOG_RESPONSE : NO_SBC_DIALOG_RESPONSE;
+    if(data.status != 2) {
+        for(int i=0;i<dsize;i++) {
+            Boolean set = True;
+            WindowInfo *win = NULL;
+            XtVaGetValues(docButtons[i], XmNset, &set, XmNuserData, &win, NULL);
+            int saveDoc = save;
+            if(!set) {
+                saveDoc = NO_SBC_DIALOG_RESPONSE;
+            }
+            if(win) {
+                // save document
+                if(!CloseFileAndWindow(win, saveDoc)) {
+                    data.status = 2; // cancel
+                    break;
+                }
+            }
+        }
+    }
+    
+    XtDestroyWidget(dialog);
+    
+    return data.status == 2 ? True : False;
+}
+
+
 /*
 ** close all the documents in a window
 */
@@ -3718,14 +4201,20 @@ int CloseAllDocumentInWindow(WindowInfo *window)
 {
     WindowInfo *win;
     
-    if (NDocuments(window) == 1) {
+    if (NUnsavedDocuments(window) == 1) {
     	/* only one document in the window */
     	return CloseFileAndWindow(window, PROMPT_SBC_DIALOG_RESPONSE);
     }
     else {
 	Widget winShell = window->shell;
 	WindowInfo *topDocument;
-
+        
+#ifndef OLD_CLOSE_FILE_DIALOG
+        // open dialog for selecting files, that should be saved
+        if(SaveFilesDialog(window)) {
+            return False;
+        } 
+#else
     	/* close all _modified_ documents belong to this window */
 	for (win = WindowList; win; ) {
     	    if (win->shell == winShell && win->fileChanged) {
@@ -3737,7 +4226,8 @@ int CloseAllDocumentInWindow(WindowInfo *window)
 	    else
 	    	win = win->next;
 	}
-
+#endif        
+        
     	/* see there's still documents left in the window */
 	for (win = WindowList; win; win=win->next)
 	    if (win->shell == winShell)
@@ -3819,6 +4309,7 @@ void RefreshMenuToggleStates(WindowInfo *window)
     XmToggleButtonSetState(window->iSearchLineItem, window->showISearchLine, False);
     XmToggleButtonSetState(window->lineNumsItem, window->showLineNumbers, False);
     XmToggleButtonSetState(window->highlightItem, window->highlightSyntax, False);
+    XtSetSensitive(window->resetZoomItem, window->zoom == 0 ? False : True);
     XtSetSensitive(window->highlightItem, window->languageMode != PLAIN_LANGUAGE_MODE);
     XmToggleButtonSetState(window->backlightCharsItem, window->backlightChars, False);
 #ifndef VMS
@@ -4061,7 +4552,7 @@ void RaiseDocument(WindowInfo *window)
     /* document already on top? */
     XtVaGetValues(window->mainWin, XmNuserData, &win, NULL);
     if (win == window)
-    	return;    
+    	return;
 
     /* set the document as top document */
     XtVaSetValues(window->mainWin, XmNuserData, window, NULL);
@@ -4166,18 +4657,41 @@ int NDocuments(WindowInfo *window)
     return nDocument;
 }
 
+int NUnsavedDocuments(WindowInfo *window)
+{
+    WindowInfo *win;
+    Widget winShell = window->shell;
+    int nDocument = 0;
+    
+    for (win = WindowList; win; win = win->next) {
+    	if(win->shell == winShell && win->fileChanged)
+	    nDocument++;
+    }
+    
+    return nDocument;
+}
+
 /* 
 ** refresh window state for this document
 */
 void RefreshWindowStates(WindowInfo *window)
 {
+    int updateStatsFormStatus = 0;
+    
     if (!IsTopDocument(window))
     	return;
 	
-    if (window->modeMessageDisplayed)
+    if(!window->showInfoBar && XtIsManaged(window->encodingInfoBar)) {
+        XtUnmanageChild(window->encodingInfoBar);
+        updateStatsFormStatus = 1;
+    }
+    
+    if (window->modeMessageDisplayed) {
     	XmTextSetString(window->statsLine, window->modeMessage);
-    else
+    } else {
     	UpdateStatsLine(window);
+    }
+    
     UpdateWindowReadOnly(window);
     UpdateWindowTitle(window);
 
@@ -4194,7 +4708,11 @@ void RefreshWindowStates(WindowInfo *window)
              XtIsManaged(window->statsLineForm)) {
     	/* turn off statsline since there's nothing to show */
     	showStats(window, False);
+    } else if(updateStatsFormStatus) {
+        showStatsForm(window);
     }
+    
+    ShowEncodingInfoBar(window, window->showInfoBar);
     
     /* signal if macro/shell is running */
     if (window->shellCmdData || window->macroCmdData)
@@ -4370,6 +4888,8 @@ static void cloneDocument(WindowInfo *window, WindowInfo *orgWin)
     params[2] = orgWin->boldFontName;
     params[3] = orgWin->boldItalicFontName;
     XtCallActionProc(window->textArea, "set_fonts", NULL, params, 4);
+    
+    window->zoom = orgWin->zoom;
 
     SetBacklightChars(window, orgWin->backlightCharTypes);
     
@@ -4872,6 +5392,39 @@ void SetEncoding(WindowInfo *window, const char *encoding)
     window->encoding[len] = '\0';
 }
 
+#define MIN_FONT_SIZE 2
+#define MAX_FONT_SIZE 800
+void SetZoom(WindowInfo *window, int step)
+{
+    int font_sz = window->font->size + step;
+    int italic_sz = window->italicFont->size + step;
+    int bold_sz = window->boldFont->size + step;
+    int bolditalic_sz = window->italicFont->size + step; 
+  
+    if(
+            font_sz < MIN_FONT_SIZE || italic_sz < MIN_FONT_SIZE ||
+            bold_sz < MIN_FONT_SIZE || bolditalic_sz < MIN_FONT_SIZE ||
+            font_sz > MAX_FONT_SIZE || italic_sz > MAX_FONT_SIZE ||
+            bold_sz > MAX_FONT_SIZE || bolditalic_sz > MAX_FONT_SIZE)
+    {
+        return;
+    }
+    
+    window->zoom += step;
+    
+    char *font = ChangeFontSize(window->fontName, font_sz);
+    char *italic = ChangeFontSize(window->italicFontName, italic_sz);
+    char *bold = ChangeFontSize(window->boldFontName, italic_sz);
+    char *bolditalic = ChangeFontSize(window->boldItalicFontName, italic_sz);
+    
+    Boolean rz = window->resizeOnFontChange;
+    window->resizeOnFontChange = False; // disable window resizing on font change
+    SetFonts(window, font, italic, bold, bolditalic);
+    window->resizeOnFontChange = rz;
+    
+    XtSetSensitive(window->resetZoomItem, window->zoom == 0 ? False : True);
+}
+
 static void WindowTakeFocus(Widget shell, WindowInfo *window, XtPointer d)
 {
     window->opened = True;
@@ -4881,4 +5434,53 @@ static void WindowTakeFocus(Widget shell, WindowInfo *window, XtPointer d)
             wm_take_focus,
             (XtCallbackProc)WindowTakeFocus,
             window);
+}
+
+
+static void closeInfoBarCB(Widget w, Widget mainWin, void *callData)
+{
+    WindowInfo *window = GetTopDocument(mainWin);
+    if(!window) {
+        return;
+    }
+    window->showInfoBar = FALSE;
+    XtUnmanageChild(window->encodingInfoBar);
+    showStatsForm(window);
+}
+
+static void reloadCB(Widget w, Widget mainWin, void *callData)
+{
+    WindowInfo *window = GetTopDocument(mainWin);
+    if(!window) {
+        return;
+    }
+    
+    if(window->fileChanged) {
+        int b = DialogF(DF_QUES, window->shell, 2, "Discard Changes",
+                "Discard changes to\n%s%s?", "OK", "Cancel", window->path,
+                window->filename);
+        if(b == 2) {
+            return;
+        }
+    }
+    
+    char *encoding = NULL;
+    
+    XmString item;
+    XtVaGetValues(window->encInfoBarList, XmNselectedItem, &item, NULL);
+    if(!item) {
+        return;
+    }
+    
+    // convert XmString to char*
+    XmStringGetLtoR(item, XmFONTLIST_DEFAULT_TAG, &encoding);
+    
+    // reload file with new encoding
+    char *enc = strcmp(encoding, "detect") ? encoding : NULL;
+    
+    RevertToSaved(window, enc);
+    
+    // cleanup
+    XmStringFree(item);
+    XtFree(encoding);
 }

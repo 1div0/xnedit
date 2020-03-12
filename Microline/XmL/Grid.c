@@ -244,6 +244,9 @@ static void TextModifyVerify(Widget w, XtPointer clientData,
 	XtPointer callData);
 static void Traverse(Widget w, XEvent *event, String *, Cardinal *);
 
+static void ScrollUp(Widget w, XEvent *event, String *, Cardinal *);
+static void ScrollDown(Widget w, XEvent *event, String *, Cardinal *);
+
 /* XFE Additions */
 static void EditTimer(XtPointer, XtIntervalId *);
 static void CreateHideUnhideButtons(XmLGridWidget g);
@@ -290,7 +293,9 @@ static Boolean XmLGridColumnIsHidden(XmLGridColumn column);
 static Boolean XmLGridColumnIsSelected(XmLGridColumn column);
 static void XmLGridColumnSetSelected(XmLGridColumn column, Boolean selected);
 static void XmLGridColumnSetVisPos(XmLGridColumn column, int visPos);
-static int XmLGridColumnWidthInPixels(XmLGridColumn column);
+/* BEGIN XNEDIT MODIFICATION */
+int XmLGridColumnWidthInPixels(XmLGridColumn column);
+/* END XNEDIT MODIFICATION */
 static void XmLGridColumnWidthChanged(XmLGridColumn column);
 
 /* XmLGridCell */
@@ -357,6 +362,8 @@ static XtActionsRec actions[] =
 	{ "XmLGridPopupSelect",  PopupSelect  },
 	{ "XmLGridDragStart",    DragStart    },
 	{ "XmLGridTraverse",     Traverse     },
+        { "ScrollUp",            ScrollUp     },
+        { "ScrollDown",          ScrollDown   },
 	/* XFE Additions */
 	{ "XmLGridHideColumn",   HideAction   },
 	{ "XmLGridUnhideColumn", UnhideAction },
@@ -428,7 +435,9 @@ Ctrl ~Shift <Btn3Down>:  XmLGridPopupSelect(TOGGLE)\n\
 <EnterWindow>:           ManagerEnter()\n\
 <LeaveWindow>:           ManagerLeave()\n\
 <FocusOut>:              ManagerFocusOut()\n\
-<FocusIn>:               ManagerFocusIn()";
+<FocusIn>:               ManagerFocusIn()\n\
+<Btn4Down>,<Btn4Up>:     ScrollUp(0)\n\
+<Btn5Down>,<Btn5Up>:     ScrollDown(0)";
 
 /* Text Translations */
 
@@ -790,6 +799,14 @@ static XtResource resources[] =
 		XtOffset(XmLGridWidget, grid.scrollCallback),
 		XmRImmediate, (XtPointer)0,
 		},
+                /* XNEdit begin */
+                {
+		XmNheaderClickCallback, XmCCallback,
+		XmRCallback, sizeof(XtCallbackList),
+		XtOffset(XmLGridWidget, grid.headerClickCallback),
+		XmRImmediate, (XtPointer)0,
+		},
+                /* XNEdit end */
 		{
 		XmNscrollColumn, XmCScrollColumn,
 		XmRInt, sizeof(int),
@@ -1573,7 +1590,7 @@ Initialize(Widget reqW,
 	g->grid.vsb = XtVaCreateWidget(
 		"vsb", xmScrollBarWidgetClass, (Widget)g,
 		XmNorientation, XmVERTICAL,
-		XmNincrement, 1,
+		XmNincrement, 3,
 		XmNtraversalOn, False,
 		XmNbackground, g->core.background_pixel,
 /* Don't force foreground on IRIX - it screws up the thumb color in sgiMode */
@@ -7689,15 +7706,35 @@ Select(Widget w,
 			return;
 		if (RowPosToType(g, row) == XmCONTENT &&
 			ColPosToType(g, col) == XmCONTENT)
-			{
-			TextAction(g, TEXT_EDIT_COMPLETE);
-			if (q != qEXTEND)
-				{
-				SetFocus(g, row, col, 0, 1);
-				ExtendSelect(g, event, False, -1, -1);
-				}
-			XmProcessTraversal(g->grid.text, XmTRAVERSE_CURRENT);
-			}
+                    {
+                    TextAction(g, TEXT_EDIT_COMPLETE);
+                    if (q != qEXTEND)
+                            {
+                            SetFocus(g, row, col, 0, 1);
+                            ExtendSelect(g, event, False, -1, -1);
+                            }
+                    XmProcessTraversal(g->grid.text, XmTRAVERSE_CURRENT);
+                    }
+                else {
+                    /* XNEdit Addition */
+                    
+                    // header licked
+                    //printf("header clicked\n");
+                    
+                    XmLGridCallbackStruct cbs;
+                    cbs.event = event;
+                    cbs.rowType = XmHEADING;
+                    cbs.columnType = XmHEADING;
+                    cbs.reason = XmCR_SELECT_CELL;
+                    cbs.column = col;
+                    cbs.row = row;
+                    
+                    XtCallCallbackList(
+                            w,
+                            g->grid.headerClickCallback,
+                            (XtPointer)&cbs);
+                }
+                
 		if (g->grid.selectionPolicy == XmSELECT_MULTIPLE_ROW &&
 			RowPosToType(g, row) == XmCONTENT)
 			{
@@ -8264,6 +8301,18 @@ Traverse(Widget w,
 		MakeColVisible(g, focusCol);
 	}
 
+/* BEGIN XNEDIT EXTENSION */
+static void ScrollUp(Widget w, XEvent *event, String *s, Cardinal *c) {
+    XmLGridWidget g = (XmLGridWidget)w;
+    XtCallActionProc(g->grid.vsb, "IncrementUpOrLeft", event, s, *c);
+}
+
+static void ScrollDown(Widget w, XEvent *event, String *s, Cardinal *c) {
+    XmLGridWidget g = (XmLGridWidget)w;
+    XtCallActionProc(g->grid.vsb, "IncrementDownOrRight", event, s, *c);
+}
+/* END XNEDIT EXTENSION */
+
 static void
 TextActivate(Widget w,
 	     XtPointer clientData,
@@ -8582,7 +8631,8 @@ XmLGridColumnSetVisPos(XmLGridColumn column,
 	column->grid.visPos = visPos;
 	}
 
-static int
+/* XNEdit modification: XmLGridColumnWidthInPixels was static */
+int
 XmLGridColumnWidthInPixels(XmLGridColumn column)
 	{
 	int i, count;
@@ -8626,6 +8676,13 @@ XmLGridColumnWidthInPixels(XmLGridColumn column)
 		}
 	return column->grid.widthInPixels;
 	}
+
+int XmLGridVSBWidth(Widget w) {
+    XmLGridWidget g = (XmLGridWidget)w;
+    Dimension width = 0;
+    XtVaGetValues(g->grid.vsb, XmNwidth, &width, NULL);
+    return (int)width;
+}
 
 static void
 XmLGridColumnWidthChanged(XmLGridColumn column)

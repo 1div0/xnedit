@@ -54,6 +54,7 @@
 #include "../util/getfiles.h"
 #include "../util/motif.h"
 #include "../util/nedit_malloc.h"
+#include "../util/xdnd.h"
 
 #include <ctype.h>
 #include <limits.h>
@@ -61,6 +62,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 
 #ifndef NO_XMIM
 #include <X11/Xlocale.h>
@@ -106,6 +108,7 @@ static int virtKeyBindingsAreInvalid(const unsigned char* bindings);
 static void restoreInsaneVirtualKeyBindings(unsigned char* bindings);
 static void noWarningFilter(String);
 static void showWarningFilter(String);
+static void dndOpenFileCB(Widget w, XtPointer value, XtPointer data);
 
 WindowInfo *WindowList = NULL;
 Display *TheDisplay = NULL;
@@ -206,7 +209,7 @@ static char *fallbackResources[] = {
     "*XmContainer.outlineIndentation:	30",
     "*XmContainer.outlineColumnWidth:	6cm",
     "*XmContainer.detailTabList:		+3cm,+3cm,+3cm",
-
+    
     /* Use baseTranslations as per Xt Programmer's Manual, 10.2.12 */
     "*XmText.baseTranslations: " NEDIT_TEXT_TRANSLATIONS,
     "*XmTextField.baseTranslations: " NEDIT_TEXT_TRANSLATIONS,
@@ -234,7 +237,7 @@ static char *fallbackResources[] = {
     
     "*newFolder.labelString: New Folder",
     "*newFolder.labelType: XmPIXMAP",
-    
+       
     "*text.lineNumForeground: " NEDIT_DEFAULT_LINENO_FG,
     "*text.background: " NEDIT_DEFAULT_TEXT_BG,
     "*text.foreground: " NEDIT_DEFAULT_FG,
@@ -316,6 +319,8 @@ static char *fallbackResources[] = {
     "*editMenu.insertFormFeed.acceleratorText: Alt+Ctrl+L",
     "*editMenu.insertCtrlCode.accelerator: Alt Ctrl<Key>i",
     "*editMenu.insertCtrlCode.acceleratorText: Alt+Ctrl+I",
+    "*editMenu.insertUnicode.accelerator: Alt Ctrl<Key>u",
+    "*editMenu.insertUnicode.acceleratorText: Alt+Ctrl+U",
     "*searchMenu.mnemonic: S",
     "*searchMenu.find.accelerator: Ctrl<Key>f",
     "*searchMenu.find.acceleratorText: [Shift]Ctrl+F",
@@ -571,6 +576,9 @@ int main(int argc, char **argv)
 	exit(EXIT_FAILURE);
     }
     
+    /* Enable Xdnd */
+    XdndInit(TheDisplay, context, dndOpenFileCB, NULL);
+    
     /* Must be done before creating widgets */
     fixupBrokenXKeysymDB();
     patchResourcesForVisual();
@@ -579,6 +587,9 @@ int main(int argc, char **argv)
     /* Initialize global symbols and subroutines used in the macro language */
     InitMacroGlobals();
     RegisterMacroSubroutines();
+    
+    /* init xdnd */
+    
     
     /* Initialize TextWidget */
     TextWidgetClassInit(TheDisplay, NEDIT_XFT_FIXED_FONT);
@@ -1422,4 +1433,61 @@ static void showWarningFilter(String message)
 static void noWarningFilter(String message)
 {
   return;
+}
+
+static void dndOpenFileCB(Widget w, XtPointer value, XtPointer data) {
+    char *urilist = value;
+    
+    size_t len = strlen(urilist);
+    
+    size_t start = 0;
+    if(len > 7 && !memcmp(urilist, "file://", 7)) {
+        start = 7;
+    }
+    
+    int err = 0;
+    
+    // urldecode
+    char *path = NEditMalloc(len + 1);
+    int k = 0;
+    for(int i=start;i<len;i++) {
+        char c = urilist[i];
+        if(c == '%') {
+            if(i + 2 < len) {
+                char code[3];
+                code[0] = urilist[i+1];
+                code[1] = urilist[i+2];
+                code[2] = '\0';
+                
+                errno = 0;
+                char *end = NULL;
+                int ascii = (int)strtol(code, &end, 16);
+                if(errno == 0 && end == &code[2]) {
+                    path[k] = ascii;
+                    i += 2;
+                } else {
+                    err = 1;
+                    break;
+                }
+            } else {
+                err = 1;
+                break;
+            }
+        } else if(c == '\n' || c == '\r') {
+            break;
+        } else {
+            path[k] = c;
+        }
+        
+        k++;
+    }
+    path[k] = '\0';
+    
+    // open file
+    char *params[2];
+    params[0] = path;
+    params[1] = NULL;
+    XtCallActionProc(w, "open", NULL, params, 1);
+    
+    NEditFree(path);
 }

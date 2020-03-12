@@ -127,6 +127,7 @@ static void noWrapCB(Widget w, WindowInfo *window, caddr_t callData);
 static void continuousWrapCB(Widget w, WindowInfo *window, caddr_t callData);
 static void wrapMarginCB(Widget w, WindowInfo *window, caddr_t callData);
 static void fontCB(Widget w, WindowInfo *window, caddr_t callData);
+static void resetZoomCB(Widget w, XtPointer clientData, XtPointer callData);
 static void tabsCB(Widget w, WindowInfo *window, caddr_t callData);
 static void backlightCharsCB(Widget w, WindowInfo *window, caddr_t callData);
 static void showMatchingOffCB(Widget w, WindowInfo *window, caddr_t callData);
@@ -323,6 +324,8 @@ static void capitalizeAP(Widget w, XEvent *event, String *args,
 static void lowercaseAP(Widget w, XEvent *event, String *args, Cardinal *nArgs);
 static void fillAP(Widget w, XEvent *event, String *args, Cardinal *nArgs);
 static void controlDialogAP(Widget w, XEvent *event, String *args,
+	Cardinal *nArgs);
+static void unicodeDialogAP(Widget w, XEvent *event, String *args,
 	Cardinal *nArgs);
 #ifndef VMS
 static void filterDialogAP(Widget w, XEvent *event, String *args,
@@ -535,6 +538,7 @@ static XtActionsRec Actions[] = {
     {"fill_paragraph", fillAP},
     {"control-code-dialog", controlDialogAP},
     {"control_code_dialog", controlDialogAP},
+    {"unicode_dialog", unicodeDialogAP},
 #ifndef VMS
     {"filter-selection-dialog", filterDialogAP},
     {"filter_selection_dialog", filterDialogAP},
@@ -754,8 +758,10 @@ Widget CreateMenuBar(Widget parent, WindowInfo *window)
     createMenuSeparator(menuPane, "sep3", FULL);
     createMenuItem(menuPane, "insertFormFeed", "Insert Form Feed", 'I',
     	    formFeedCB, window, FULL);
-    createMenuItem(menuPane, "insertCtrlCode", "Insert Ctrl Code...", 'n',
-    	    doActionCB, "control_code_dialog", FULL);
+    //createMenuItem(menuPane, "insertCtrlCode", "Insert Ctrl Code...", 'n',
+    //	    doActionCB, "control_code_dialog", FULL);
+    createMenuItem(menuPane, "insertUnicode", "Insert Unicode...", 'U',
+    	    doActionCB, "unicode_dialog", FULL);
 #ifdef SGI_CUSTOM
     createMenuSeparator(menuPane, "sep4", SHORT);
     window->overtypeModeItem = createMenuToggle(menuPane, "overtype", "Overtype", 'O',
@@ -1106,6 +1112,11 @@ Widget CreateMenuBar(Widget parent, WindowInfo *window)
     createMenuItem(menuPane, "tabs", "Tab Stops...", 'T', tabsCB, window, SHORT);
     createMenuItem(menuPane, "textFont", "Text Fonts...", 'F', fontCB, window,
     	    FULL);
+    
+    window->resetZoomItem = createMenuItem(menuPane, "resetZoom", "Reset Zoom", 'Z', resetZoomCB, NULL,
+    	    SHORT);
+    XtSetSensitive(window->resetZoomItem, window->zoom == 0 ? False : True);
+    
     window->highlightItem = createMenuToggle(menuPane, "highlightSyntax",
 	    "Highlight Syntax", 'H', doActionCB, "set_highlight_syntax",
 	    GetPrefHighlightSyntax(), SHORT);
@@ -1686,6 +1697,14 @@ static void matchSyntaxBasedCB(Widget w, WindowInfo *window, caddr_t callData)
 static void fontCB(Widget w, WindowInfo *window, caddr_t callData)
 {
     ChooseFonts(WidgetToWindow(MENU_WIDGET(w)), True);
+}
+
+static void resetZoomCB(Widget w, XtPointer clientData, XtPointer callData)
+{
+    WindowInfo *window = WidgetToWindow(MENU_WIDGET(w));
+    if(window->zoom != 0) {
+        SetZoom(window, -window->zoom); // reverse previous steps
+    }
 }
 
 static void noWrapCB(Widget w, WindowInfo *window, caddr_t callData)
@@ -2908,27 +2927,29 @@ static void revertDialogAP(Widget w, XEvent *event, String *args,
     /* re-reading file is irreversible, prompt the user first */
     if (window->fileChanged)
     {
-        b = DialogF(DF_QUES, window->shell, 2, "Discard Changes",
-                "Discard changes to\n%s%s?", "OK", "Cancel", window->path,
+        b = DialogF(DF_QUES, window->shell, 3, "Reload File",
+                "Re-load file and discard changes to\n%s%s?", "Re-read", "Change encoding", "Cancel", window->path,
                 window->filename);
     } else
     {
-        b = DialogF(DF_QUES, window->shell, 2, "Reload File",
-                "Re-load file\n%s%s?", "Re-read", "Cancel", window->path,
+        b = DialogF(DF_QUES, window->shell, 3, "Reload File",
+                "Re-load file\n%s%s?", "Re-read", "Change encoding", "Cancel", window->path,
                 window->filename);
     }
 
-    if (b != 1)
-    {
-        return;
+    if(b == 1) {
+        // reload
+        XtCallActionProc(window->lastFocus, "revert_to_saved", event, NULL, 0);
+    } else if(b == 2) {
+        // change encoding
+        ShowEncodingInfoBar(window, TRUE);
     }
-    XtCallActionProc(window->lastFocus, "revert_to_saved", event, NULL, 0);
 }
 
 
 static void revertAP(Widget w, XEvent *event, String *args, Cardinal *nArgs) 
 {
-    RevertToSaved(WidgetToWindow(w));
+    RevertToSaved(WidgetToWindow(w), NULL);
 }
 
 static void includeDialogAP(Widget w, XEvent *event, String *args,
@@ -3665,6 +3686,58 @@ static void controlDialogAP(Widget w, XEvent *event, String *args,
     XtCallActionProc(w, "insert_string", event, params, 1);
 }
 
+static void unicodeDialogAP(Widget w, XEvent *event, String *args,
+	Cardinal *nArgs)
+{
+    WindowInfo *window = WidgetToWindow(w);
+    unsigned char charCodeString[2];
+    char codePointText[DF_MAX_PROMPT_LENGTH], str[8];
+    char *params[1];
+    int response;
+    size_t inputLen = 0;
+    
+    if (CheckReadOnly(window))
+    	return;
+
+    response = DialogF(DF_PROMPT, window->shell, 2, "Insert Unicode Codepoint",
+            "Unicode Codepoint:", codePointText, "OK", "Cancel");
+
+    if (response == 2)
+    	return;
+    
+    inputLen = strlen(codePointText);
+    int base = 10;
+    int offset = 0;
+    if(inputLen > 2 && (
+       !memcmp(codePointText, "0x", 2)  ||
+       !memcmp(codePointText, "\\u", 2) ||
+       !memcmp(codePointText, "\\U", 2) ||
+       !memcmp(codePointText, "U+", 2)  ||
+       !memcmp(codePointText, "u+", 2)))
+    {
+        base = 16;
+        offset = 2;
+    } else if(inputLen > 1 && (codePointText[0] == 'u' || codePointText[0] == 'U')) {
+        base = 16;
+        offset = 1;
+    }
+    
+    char *endPtr = NULL;
+    errno = 0;
+    unsigned long value = strtoul(codePointText + offset, &endPtr, base);
+    if(errno != 0) {
+        XBell(TheDisplay, 0);
+	return;
+    }
+    
+    // convert codepoint to utf8
+    memset(str, '\0', 8);
+    Ucs4ToUtf8((FcChar32)value, str);    
+    
+    params[0] = (char *)str;
+    XtCallActionProc(w, "insert_string", event, params, 1);
+}
+
 #ifndef VMS
 static void filterDialogAP(Widget w, XEvent *event, String *args,
 	Cardinal *nArgs)
@@ -4315,6 +4388,8 @@ static void setFontsAP(Widget w, XEvent *event, String *args,
     WindowInfo *window = WidgetToWindow(w);
     if (*nArgs >= 4) {
         SetFonts(window, args[0], args[1], args[2], args[3]);
+        window->zoom = 0;
+        XtSetSensitive(window->resetZoomItem, False);
     }
     else {
         fprintf(stderr, "xnedit: set_fonts requires 4 arguments\n");

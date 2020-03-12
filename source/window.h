@@ -66,6 +66,8 @@ void ShowStatsLine(WindowInfo *window, int state);
 void ShowISearchLine(WindowInfo *window, int state);
 void TempShowISearch(WindowInfo *window, int state);
 void ShowLineNumbers(WindowInfo *window, int state);
+void ShowEncodingInfoBar(WindowInfo *window, int state);
+void SetEncodingInfoBarLabel(WindowInfo *window, char *message);
 void SetModeMessage(WindowInfo *window, const char *message);
 void ClearModeMessage(WindowInfo *window);
 WindowInfo *WidgetToWindow(Widget w);
@@ -84,6 +86,7 @@ void NextDocument(WindowInfo *window);
 void PreviousDocument(WindowInfo *window);
 void LastDocument(WindowInfo *window);
 int NDocuments(WindowInfo *window);
+int NUnsavedDocuments(WindowInfo *window);
 WindowInfo *MoveDocument(WindowInfo *toWindow, WindowInfo *window);
 WindowInfo *DetachDocument(WindowInfo *window);
 void MoveDocumentDialog(WindowInfo *window);
@@ -104,4 +107,5 @@ void SetToggleButtonState(WindowInfo *window, Widget w, Boolean state,
 void SetSensitive(WindowInfo *window, Widget w, Boolean sensitive);
 void CleanUpTabBarExposeQueue(WindowInfo *window);
 void SetEncoding(WindowInfo *window, const char *encoding);
+void SetZoom(WindowInfo *window, int step);
 #endif /* NEDIT_WINDOW_H_INCLUDED */
