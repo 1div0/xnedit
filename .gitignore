@@ -18,3 +18,4 @@ util/Makefile.linux
 util/Makefile.linux-static
 util/Makefile.solaris
 util/check_lin_tif
+.idea/
