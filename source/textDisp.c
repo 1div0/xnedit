@@ -1990,21 +1990,12 @@ static void redisplayLine(textDisp *textD, int visLineNum, int leftClip,
      * Sometimes with anti aliasing transparent pixels are above the glyph
      */
     if(textD->d) {
-        Picture pic = XftDrawPicture(textD->d);
-        if(pic != 0) {
-            XRectangle rect;
-            rect.x = 0;
-            rect.y = 0;
-            rect.width = rightClip - leftClip;
-            rect.height = textD->ascent + textD->descent;
-            XRenderSetPictureClipRectangles(
-                    XtDisplay(textD->w),
-                    pic,
-                    leftClip,
-                    y,
-                    &rect,
-                    1);
-        }
+        XRectangle rect;
+        rect.x = 0;
+        rect.y = 0;
+        rect.width = rightClip - leftClip;
+        rect.height = textD->ascent + textD->descent;
+        XftDrawSetClipRectangles(textD->d, leftClip, y, &rect, 1);
     }
     
     /* Scan character positions from the beginning of the clipping range, and
@@ -3078,16 +3069,7 @@ static void redrawLineNumbers(textDisp *textD, int clearAll)
     XSetClipRectangles(display, textD->lineNumGC, 0, 0,
     	    &clipRect, 1, Unsorted);
     if(textD->d) {
-        Picture pic = XftDrawPicture(textD->d);
-        if(pic != 0) {
-            XRenderSetPictureClipRectangles(
-                    XtDisplay(textD->w),
-                    pic,
-                    0,
-                    0,
-                    &clipRect,
-                    1);
-        }
+        XftDrawSetClipRectangles(textD->d, 0, 0, &clipRect, 1);
     }
     
     /* Erase the previous contents of the line number area, if requested */
