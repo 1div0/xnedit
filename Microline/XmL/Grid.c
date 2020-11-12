@@ -8330,6 +8330,15 @@ static void SelectK(Widget w, XEvent *event, String *s, Cardinal *c) {
     XtCallCallbackList((Widget)g, g->grid.keyPressedCallback, (XtPointer)&cbs);
 }
 
+void XmLGridSetIgnoreModifyVerify(Widget g, Boolean set) {
+    XmLGridWidget grid = (XmLGridWidget)g;
+    grid->grid.ignoreModifyVerify = set;
+}
+void XmLGridFocusAndShowRow(Widget g, int row) {
+    XmLGridWidget grid = (XmLGridWidget)g;
+    ChangeFocus(grid, row, 0);
+    MakeRowVisible(grid, row);
+}
 /* END XNEDIT EXTENSION */
 
 static void

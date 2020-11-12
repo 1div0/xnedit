@@ -30,13 +30,21 @@
 
 #include "../source/textBuf.h" /* Utf8CharLen */
 #include "../source/textSel.h"
+#include "../source/textDisp.h" /* PixelToColor */
 
-#define TF_DEFAULT_FONT_NAME "Sans:size=10"
+#define TF_DEFAULT_FONT_NAME "Monospace:size=10"
+
+#define TF_VPADDING 3
+#define TF_HPADDING 2
 
 #define TF_BUF_BLOCK 128
 
+#define TF_TAB_STR "    "
+
 static NFont *defaultFont;
 static Dimension defaultMaxLength = 4;
+
+static void textfield_class_init(void);
 
 static void mouse1DownAP(Widget w, XEvent *event, String *args, Cardinal *nArgs);
 static void mouse1UpAP(Widget w, XEvent *event, String *args, Cardinal *nArgs);
@@ -80,7 +88,7 @@ static void tfSelectionIndex(TextFieldWidget tf, int *start, int *end);
 static void tfSetSelection(TextFieldWidget tf, int from, int to);
 static void tfClearSelection(TextFieldWidget tf);
 
-static void tfInsertPrimary(TextFieldWidget tf);
+static void tfInsertPrimary(TextFieldWidget tf, XEvent *event);
 
 static void TFInsert(TextFieldWidget tf, const char *chars, size_t nchars);
 static  int TFLeftPos(TextFieldWidget tf);
@@ -107,7 +115,8 @@ static XtResource resources[] = {
     {textNXftFont, textCXftFont, textTXftFont, sizeof(NFont *), XtOffset(TextFieldWidget, textfield.font), textTXftFont, &defaultFont},
     {XmNvalueChangedCallback, XmCCallback, XmRCallback, sizeof(XtCallbackList), XtOffset(TextFieldWidget, textfield.valueChangedCB), XmRCallback, NULL},
     {XmNfocusCallback, XmCCallback, XmRCallback, sizeof(XtCallbackList), XtOffset(TextFieldWidget, textfield.focusCB), XmRCallback, NULL},
-    {XmNactivateCallback, XmCCallback, XmRCallback, sizeof(XtCallbackList), XtOffset(TextFieldWidget, textfield.activateCB), XmRCallback, NULL}
+    {XmNactivateCallback, XmCCallback, XmRCallback, sizeof(XtCallbackList), XtOffset(TextFieldWidget, textfield.activateCB), XmRCallback, NULL},
+    {XmNblinkRate, XmCBlinkRate , XmRInt, sizeof(int), XtOffset(TextFieldWidget, textfield.blinkrate), XmRImmediate, (XtPointer)500}
 };
 
 static XtActionsRec actionslist[] = {
@@ -140,32 +149,38 @@ static XtActionsRec actionslist[] = {
 
 
 static char defaultTranslations[] = "\
-<FocusIn>:		    focusIn()\n\
-<FocusOut>:                 focusOut()\n\
-<EnterWindow>:		    leave()\n\
-<LeaveWindow>:              enter()\n\
-s ~m ~a <Key>Tab:           PrimitivePrevTabGroup()\n\
-~m ~a <Key>Tab:             PrimitiveNextTabGroup()\n\
-<Btn1Down>:                 mouse1down()\n\
-<Btn1Up>:                   mouse1up()\n\
-<Btn2Up>:                   insertPrimary()\n\
-Ctrl<KeyPress>v:            paste-clipboard()\n\
-Button1<MotionNotify>:      adjustselection()\n\
-<KeyPress>Return:           PrimitiveParentActivate() action()\n\
-<Key>osfActivate:           PrimitiveParentActivate() action()\n\
-<Key>osfCancel:             PrimitiveParentCancel()\n\
-Ctrl<KeyPress>osfBackSpace: deleteprevword()\n\
-Ctrl<KeyPress>osfDelete:    deletenextword()\n\
-<KeyPress>osfBackSpace:     deleteprev()\n\
-<KeyPress>osfDelete:        deletenext()\n\
-<Key>osfBeginLine:          beginLine()\n\
-<Key>osfEndLine:            endLine()\n\
-Ctrl<KeyPress>osfLeft:      moveleftword()\n\
-Ctrl<KeyPress>osfRight:     moverightword()\n\
-Ctrl<Key>a:                 selectAll()\n\
-<KeyPress>osfLeft:          moveleft()\n\
-<KeyPress>osfRight:         moveright()\n\
-<KeyPress>:	            insert()";
+<FocusIn>:		        focusIn()\n\
+<FocusOut>:                     focusOut()\n\
+<EnterWindow>:		        leave()\n\
+<LeaveWindow>:                  enter()\n\
+s ~m ~a <Key>Tab:               PrimitivePrevTabGroup()\n\
+~m ~a <Key>Tab:                 PrimitiveNextTabGroup()\n\
+<Btn1Down>:                     mouse1down()\n\
+<Btn1Up>:                       mouse1up()\n\
+<Btn2Up>:                       insertPrimary()\n\
+Ctrl<KeyPress>v:                paste-clipboard()\n\
+Button1<MotionNotify>:          adjustselection()\n\
+<KeyPress>Return:               PrimitiveParentActivate() action()\n\
+<Key>osfActivate:               PrimitiveParentActivate() action()\n\
+<Key>osfCancel:                 PrimitiveParentCancel()\n\
+Ctrl<KeyPress>osfBackSpace:     deleteprevword()\n\
+Ctrl<KeyPress>osfDelete:        deletenextword()\n\
+<KeyPress>osfBackSpace:         deleteprev()\n\
+<KeyPress>osfDelete:            deletenext()\n\
+Shift<Key>osfBeginLine:         beginLine(l)\n\
+<Key>osfBeginLine:              beginLine()\n\
+Shift<Key>osfEndLine:           endLine(r)\n\
+<Key>osfEndLine:                endLine()\n\
+Ctrl Shift<KeyPress>osfLeft:    moveleftword(l)\n\
+Ctrl Shift<KeyPress>osfRight:   moverightword(r)\n\
+Ctrl<KeyPress>osfLeft:          moveleftword()\n\
+Ctrl<KeyPress>osfRight:         moverightword()\n\
+Ctrl<Key>a:                     selectAll()\n\
+Shift<KeyPress>osfLeft:         moveleft(l)\n\
+Shift<KeyPress>osfRight:        moveright(r)\n\
+<KeyPress>osfLeft:              moveleft()\n\
+<KeyPress>osfRight:             moveright()\n\
+<KeyPress>:	                insert()";
 
 
 
@@ -175,7 +190,7 @@ TextFieldClassRec tfWidgetClassRec = {
         (WidgetClass)&xmPrimitiveClassRec,
         "XmTextField",                   // class_name
         sizeof(TextFieldRec),            // widget_size
-        NULL,                            // class_initialize
+        textfield_class_init,            // class_initialize
         NULL,                            // class_part_initialize
         FALSE,                           // class_inited
         textfield_init,                  // initialize
@@ -224,6 +239,29 @@ TextFieldClassRec tfWidgetClassRec = {
 WidgetClass textfieldWidgetClass = (WidgetClass)&tfWidgetClassRec;
 
 
+static Boolean XftFontConvert(
+    Display*   dpy,
+    XrmValue*  args,
+    Cardinal*  num_args,
+    XrmValue*  from,
+    XrmValue*  to,
+    XtPointer* converter_data)
+{
+    NFont *font = FontFromName(dpy, from->addr);
+    if(font) {
+        memcpy(to->addr, &font, sizeof(NFont*));
+        return True;
+    } else {
+        to->addr = 0;
+        to->size = 0;
+        return True;
+    }
+}
+
+static void textfield_class_init(void) {
+    XtSetTypeConverter(XmRString, textTXftFont, XftFontConvert, NULL, 0, XtCacheNone, NULL); // TODO: cache, destructor
+}
+
 Widget XNECreateTextField(Widget parent, char *name, ArgList arglist, Cardinal argcount) {
     return XtCreateWidget(name, textfieldWidgetClass, parent, arglist, argcount);
 }
@@ -251,6 +289,9 @@ void textfield_init(Widget request, Widget neww, ArgList args, Cardinal *num_arg
     
     tf->textfield.btn1ClickPrev = 0;
     tf->textfield.btn1ClickPrev2 = 0;
+    
+    tf->textfield.blinkProcId = 0;
+    tf->textfield.cursorOn = 0;
     
     if(aTargets == 0) {
         aTargets = XInternAtom(XtDisplay(request), "TARGETS", 0);
@@ -316,23 +357,24 @@ void textfield_realize(Widget widget, XtValueMask *mask, XSetWindowAttributes *a
     
     tfInitXft(text);
     
-    text->textfield.textColor.color.alpha = 0xFFFF;
-    
-    XRenderColor c = { 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF };
-    text->textfield.selTextColor.color = c;
-    
-    
+    text->textfield.foregroundColor = PixelToColor(widget, text->primitive.foreground);  
+    text->textfield.backgroundColor = PixelToColor(widget, text->core.background_pixel);
+        
     XGCValues gcvals;
     gcvals.foreground = text->primitive.foreground;
     gcvals.background = text->core.background_pixel;
     text->textfield.gc = XCreateGC(dpy, XtWindow(widget), (GCForeground|GCBackground), &gcvals);
     
+    gcvals.foreground = text->core.background_pixel;
+    gcvals.background = text->primitive.foreground;
+    text->textfield.gcInv = XCreateGC(dpy, XtWindow(widget), (GCForeground|GCBackground), &gcvals);
+    
     gcvals.foreground = XtParent(text)->core.background_pixel;
     gcvals.background = XtParent(text)->core.background_pixel;
     text->textfield.highlightBackground = XCreateGC(dpy, XtWindow(widget), (GCForeground|GCBackground), &gcvals);
     
-    text->textfield.textarea_xoff = text->primitive.shadow_thickness + text->primitive.highlight_thickness + 2;
-    text->textfield.textarea_yoff = text->primitive.shadow_thickness + text->primitive.highlight_thickness + 1;
+    text->textfield.textarea_xoff = text->primitive.shadow_thickness + text->primitive.highlight_thickness + TF_HPADDING;
+    text->textfield.textarea_yoff = text->primitive.shadow_thickness + text->primitive.highlight_thickness + TF_VPADDING;
     
     text->textfield.posX = text->textfield.textarea_xoff;
 }
@@ -344,6 +386,7 @@ void textfield_destroy(Widget widget) {
         FontUnref(tf->textfield.font);
     }
     XFreeGC(XtDisplay(widget), tf->textfield.gc);
+    XFreeGC(XtDisplay(widget), tf->textfield.gcInv);
     XFreeGC(XtDisplay(widget), tf->textfield.highlightBackground);
 }
 
@@ -352,19 +395,38 @@ void textfield_resize(Widget widget) {
 }
 
 
-static int tfDrawString(TextFieldWidget tf, XftFont *font, XftColor *color, int x, const char *text, size_t len) {
+static int tfDrawString(TextFieldWidget tf, XftFont *font, XftColor *color, int x, const char *text, size_t len) { 
+    NFontList *fl = tf->textfield.font->fonts;
+    
+    int yoff = tf->textfield.textarea_yoff;
+    int area = tf->core.height - 2*yoff;
+    int pad  = area - (fl->font->ascent + fl->font->descent);
+    int hpad = pad/2;
+    
+    
     XftDrawStringUtf8(
             tf->textfield.d,
             color,
             font,
             x - tf->textfield.scrollX,
-            tf->core.height - 2*tf->textfield.textarea_yoff,
+            tf->core.height - tf->textfield.textarea_yoff -fl->font->descent - hpad,
             (FcChar8*)text,
             len);
     
     XGlyphInfo extents;
     XftTextExtentsUtf8(XtDisplay(tf), font, (FcChar8*)text, len, &extents);
     return extents.xOff;
+}
+
+static void tfDrawCursor(TextFieldWidget tf) {
+    XDrawLine(
+            XtDisplay(tf),
+            XtWindow(tf),
+            tf->textfield.cursorOn ? tf->textfield.gc : tf->textfield.gcInv,
+            tf->textfield.posX - tf->textfield.scrollX,
+            tf->textfield.textarea_yoff,
+            tf->textfield.posX - tf->textfield.scrollX,
+            tf->core.height-tf->textfield.textarea_yoff);
 }
 
 static void tfRedrawText(TextFieldWidget tf) {
@@ -382,7 +444,7 @@ static void tfRedrawText(TextFieldWidget tf) {
         
         XftDrawRect(
                 tf->textfield.d,
-                &tf->textfield.textColor,
+                &tf->textfield.foregroundColor,
                 selStartX - tf->textfield.scrollX,
                 tf->textfield.textarea_yoff,
                 selEndX - selStartX,
@@ -398,7 +460,7 @@ static void tfRedrawText(TextFieldWidget tf) {
     XftDrawSetClipRectangles(tf->textfield.d, tf->textfield.textarea_xoff, 0, &rect, 1);
     
     XftFont *font = tf->textfield.font->fonts->font;
-    XftColor *color = &tf->textfield.textColor;
+    XftColor *color = &tf->textfield.foregroundColor;
     
     const char *buf = tf->textfield.buffer;
     size_t length = tf->textfield.length;
@@ -413,14 +475,14 @@ static void tfRedrawText(TextFieldWidget tf) {
         charlen = Utf8ToUcs4(buf + i, &c, length - i);
         
         XftFont *cFont = FindFont(tf->textfield.font, c);
-        XftColor *cColor = &tf->textfield.textColor;
+        XftColor *cColor = &tf->textfield.foregroundColor;
         if(tf->textfield.hasSelection) {
             if(i >= selStart && i < selEnd) {
-                cColor = &tf->textfield.selTextColor;
+                cColor = &tf->textfield.backgroundColor;
             }
         }
         
-        if(cFont != font || color != cColor) {
+        if(c == '\t' || cFont != font || color != cColor) {
             // write chars from start to i-1 with previous font
             size_t drawLen = i - start;
             if(drawLen > 0) {
@@ -429,6 +491,10 @@ static void tfRedrawText(TextFieldWidget tf) {
             }
             font = cFont;
             color = cColor;
+            if(c == '\t') {
+                xoff += tfDrawString(tf, font, color, xoff, TF_TAB_STR, sizeof(TF_TAB_STR)-1);
+                start++;
+            }
         }
         
         pos++;
@@ -438,14 +504,7 @@ static void tfRedrawText(TextFieldWidget tf) {
         tfDrawString(tf, font, color, xoff, buf + start, drawLen);
     }
     
-    XDrawLine(
-            XtDisplay(tf),
-            XtWindow(tf),
-            tf->textfield.gc,
-            tf->textfield.posX - tf->textfield.scrollX,
-            tf->textfield.textarea_yoff,
-            tf->textfield.posX - tf->textfield.scrollX,
-            tf->core.height-tf->textfield.textarea_yoff);
+    tfDrawCursor(tf);
 }
 
 static void tfDrawHighlight(TextFieldWidget tf) {
@@ -457,7 +516,7 @@ static void tfDrawHighlight(TextFieldWidget tf) {
             0,
             tf->core.width,
             tf->core.height,
-            tf->primitive.highlight_color);
+            tf->primitive.highlight_thickness);
 }
 
 void textfield_expose(Widget widget, XEvent* event, Region region) {
@@ -469,14 +528,14 @@ void textfield_expose(Widget widget, XEvent* event, Region region) {
     XmeDrawShadows(
             XtDisplay(tf),
             XtWindow(tf),
-            tf->primitive.top_shadow_GC,
             tf->primitive.bottom_shadow_GC,
+            tf->primitive.top_shadow_GC,
             tf->primitive.highlight_thickness,
             tf->primitive.highlight_thickness,
             tf->core.width - (2 * tf->primitive.highlight_thickness),
             tf->core.height - (2 * tf->primitive.highlight_thickness),
             tf->primitive.shadow_thickness,
-            XmSHADOW_ETCHED_IN);
+            XmSHADOW_OUT);
      //*/
     
     tfRedrawText((TextFieldWidget)widget);
@@ -514,7 +573,7 @@ void textfield_recalc_size(TextFieldWidget w) {
     int height = font->fonts->font->ascent + font->fonts->font->descent;
     int width = w->core.width;
     
-    height += w->primitive.highlight_thickness + w->primitive.shadow_thickness + 8;
+    height += 2*(w->primitive.highlight_thickness + w->primitive.shadow_thickness) + 2*TF_VPADDING;
     
     XtMakeResizeRequest((Widget)w, width, height, NULL, NULL);
 }
@@ -550,7 +609,7 @@ static void mouse1DownAP(Widget w, XEvent *event, String *args, Cardinal *nArgs)
         
         selStart = 0;
         selEnd = tf->textfield.length;
-        
+        tf->textfield.pos = selEnd;
         tf->textfield.dontAdjustSel = 1;
     } else if(t - tf->textfield.btn1ClickPrev < multiclicktime) {
         // double click
@@ -559,7 +618,8 @@ static void mouse1DownAP(Widget w, XEvent *event, String *args, Cardinal *nArgs)
         wordbounds(tf, index, &wleft, &wright);
         
         selStart = wleft;
-        selEnd = wright; 
+        selEnd = wright;
+        tf->textfield.pos = wright;
         tf->textfield.dontAdjustSel = 1;
     } else {
         selStart = index;
@@ -738,18 +798,41 @@ static void deleteNextWordAP(Widget w, XEvent *event, String *args, Cardinal *nA
     tfRedrawText(tf);
 }
 
+static void moveSelect(TextFieldWidget tf, String *args, Cardinal *nArgs, int old_pos, int new_pos) {
+    if(*nArgs == 1) {
+        String d = args[0];
+        // select
+        if(tf->textfield.hasSelection) {
+            if(new_pos == (d[0] == 'l' ? tf->textfield.selStart : tf->textfield.selEnd)) {
+                tf->textfield.hasSelection = 0;
+            } else if(d[0] == 'r' && new_pos < tf->textfield.selEnd) {
+                tfSetSelection(tf, new_pos, tf->textfield.selEnd);
+            } else if(new_pos > tf->textfield.selStart) {
+                tfSetSelection(tf, tf->textfield.selStart, new_pos);
+            } else {
+                tfSetSelection(tf, new_pos, tf->textfield.selEnd);
+            }
+        } else {
+            tfSetSelection(tf, old_pos, new_pos);
+        }
+    } else {
+        tf->textfield.hasSelection = 0;
+    }
+}
+
 static void moveLeftAP(Widget w, XEvent *event, String *args, Cardinal *nArgs) {
     TextFieldWidget tf = (TextFieldWidget)w;
+    int old_pos = tf->textfield.pos;
     tf->textfield.pos = TFLeftPos(tf);
+    moveSelect(tf, args, nArgs, old_pos, tf->textfield.pos);
     tfRedrawText(tf);
 }
 
 static void moveRightAP(Widget w, XEvent *event, String *args, Cardinal *nArgs) {
     TextFieldWidget tf = (TextFieldWidget)w;
-    int p1, p2;
-    p1 = tf->textfield.pos;
+    int old_pos = tf->textfield.pos;
     tf->textfield.pos = TFRightPos(tf);
-    p2 = tf->textfield.pos;
+    moveSelect(tf, args, nArgs, old_pos, tf->textfield.pos);
     tfRedrawText(tf);
 }
 
@@ -757,6 +840,7 @@ static void moveLeftWordAP(Widget w, XEvent *event, String *args, Cardinal *nArg
     TextFieldWidget tf = (TextFieldWidget)w;
     
     int pos = tf->textfield.pos;
+    int old_pos = pos;
     int word = 0; // cursor inside a word?
     while(pos > 0) {
         pos = TFLeftPos(tf);
@@ -771,11 +855,16 @@ static void moveLeftWordAP(Widget w, XEvent *event, String *args, Cardinal *nArg
         tf->textfield.pos = pos;
     }
     
+    int new_pos = tf->textfield.pos;
+    
+    moveSelect(tf, args, nArgs, old_pos, new_pos);
+    
     tfRedrawText(tf);
 }
 
 static void moveRightWordAP(Widget w, XEvent *event, String *args, Cardinal *nArgs) {
     TextFieldWidget tf = (TextFieldWidget)w;
+    int old_pos = tf->textfield.pos;
     
     int space = 0; // cursor inside a word?
     while(tf->textfield.pos < tf->textfield.length) {
@@ -789,16 +878,30 @@ static void moveRightWordAP(Widget w, XEvent *event, String *args, Cardinal *nAr
             space = 1;
         }
     }
+    int new_pos = tf->textfield.pos;
+    
+    moveSelect(tf, args, nArgs, old_pos, new_pos);
     
     tfRedrawText(tf);
 }
 
+static void blinkCB(XtPointer data, XtIntervalId *id) {
+    TextFieldWidget tf = data;
+    tf->textfield.cursorOn = !tf->textfield.cursorOn;
+    
+    tfDrawCursor(tf);
+    
+    tf->textfield.blinkProcId = XtAppAddTimeOut(
+                XtWidgetToApplicationContext((Widget)tf),
+                tf->textfield.blinkrate,
+                blinkCB,
+                tf);
+}
 
 static void focusInAP(Widget w, XEvent *event, String *args, Cardinal *nArgs) {
     TextFieldWidget tf = (TextFieldWidget)w;
     if(!event->xfocus.send_event) return;
-    
-    
+     
     tf->textfield.hasFocus = 1;
     
     XSetICFocus(tf->textfield.xic);
@@ -808,6 +911,14 @@ static void focusInAP(Widget w, XEvent *event, String *args, Cardinal *nArgs) {
     cb.event = event;
     XtCallCallbackList (w, tf->textfield.focusCB, (XtPointer) &cb);
     
+    if(tf->textfield.blinkProcId == 0) {
+        tf->textfield.blinkProcId = XtAppAddTimeOut(
+                XtWidgetToApplicationContext(w),
+                tf->textfield.blinkrate,
+                blinkCB,
+                tf);
+    }
+    
     Region r;
     textfield_expose(w, event, r);
 }
@@ -816,6 +927,12 @@ static void focusOutAP(Widget w, XEvent *event, String *args, Cardinal *nArgs) {
     TextFieldWidget tf = (TextFieldWidget)w;
     
     XUnsetICFocus(tf->textfield.xic);
+    
+    if(tf->textfield.blinkProcId != 0) {
+        XtRemoveTimeOut(tf->textfield.blinkProcId);
+        tf->textfield.blinkProcId = 0;
+    }
+    tf->textfield.cursorOn = 1;
     
     tf->textfield.hasFocus = 0;
     Region r;
@@ -872,15 +989,17 @@ static void pasteAP(Widget w, XEvent *event, String *args, Cardinal *nArgs) {
 
 static void endLineAP(Widget w, XEvent *event, String *args, Cardinal *nArgs) {
     TextFieldWidget tf = (TextFieldWidget)w;
+    int old_pos = tf->textfield.pos;
     tf->textfield.pos = tf->textfield.length;
-    tfClearSelection(tf);
+    moveSelect(tf, args, nArgs, old_pos, tf->textfield.pos);
     tfRedrawText(tf);
 }
 
 static void beginLineAP(Widget w, XEvent *event, String *args, Cardinal *nArgs) {
     TextFieldWidget tf = (TextFieldWidget)w;
+    int old_pos = tf->textfield.pos;
     tf->textfield.pos = 0;
-    tfClearSelection(tf);
+    moveSelect(tf, args, nArgs, 0, old_pos);
     tfRedrawText(tf);
 }
 
@@ -892,7 +1011,7 @@ static void selectAllAP(Widget w, XEvent *event, String *args, Cardinal *nArgs) 
 
 static void insertPrimaryAP(Widget w, XEvent *event, String *args, Cardinal *nArgs) {
     TextFieldWidget tf = (TextFieldWidget)w;
-    tfInsertPrimary(tf);
+    tfInsertPrimary(tf, event);
 }
 
 static int  tfIndexToX(TextFieldWidget tf, int pos) {
@@ -912,7 +1031,7 @@ static int  tfIndexToX(TextFieldWidget tf, int pos) {
         charlen = Utf8ToUcs4(buf + i, &c, length - i);
         
         XftFont *cFont = FindFont(tf->textfield.font, c);
-        if(cFont != font) {
+        if(c == '\t' || cFont != font) {
             // write chars from start to i-1 with previous font
             size_t drawLen = i - start;
             if(drawLen > 0) {
@@ -927,6 +1046,17 @@ static int  tfIndexToX(TextFieldWidget tf, int pos) {
                 start = i;
             }
             font = cFont;
+            if(c == '\t') {
+                start++;
+                XftTextExtentsUtf8(
+                        XtDisplay(tf),
+                        font,
+                        (FcChar8*)TF_TAB_STR,
+                        sizeof(TF_TAB_STR)-1,
+                        &extents
+                        );
+                xoff += extents.xOff;
+            }
         }
     }
     int drawLen = i - start;
@@ -1007,6 +1137,13 @@ static void tfSetSelection(TextFieldWidget tf, int from, int to) {
     if(!tf->textfield.hasSelection) {
         XtOwnSelection((Widget)tf, XA_PRIMARY, XtLastTimestampProcessed(XtDisplay((Widget)tf)), convertSelection, loseSelection, NULL);
     }
+    
+    if(from > to) {
+        int f = from;
+        from = to;
+        to = f;
+    }
+    
     tf->textfield.hasSelection = 1;
     tf->textfield.selStart = from;
     tf->textfield.selEnd = to > tf->textfield.length ? tf->textfield.length : to;
@@ -1072,12 +1209,22 @@ static int tfXToPos(TextFieldWidget tf, int x) {
         FcChar32 c;
         charlen = Utf8ToUcs4(buf + i, &c, length - i);
         
+        const char *str;
+        size_t slen;
+        if(c == '\t') {
+            str = TF_TAB_STR;
+            slen = sizeof(TF_TAB_STR)-1;
+        } else {
+            str = buf+i;
+            slen = charlen;
+        }
+        
         XftFont *font = FindFont(tf->textfield.font, c);
         XftTextExtentsUtf8(
                 XtDisplay(tf),
                 font,
-                (FcChar8*)buf + i,
-                charlen,
+                (FcChar8*)str,
+                slen,
                 &extents
                 );
         xoff += extents.xOff;
@@ -1151,6 +1298,7 @@ static void TFDelete(TextFieldWidget tf, int from, int to) {
 
 struct PSelection {
     TextFieldWidget tf;
+    XEvent *event;
     char *xastring;
     char *utf8string;
     int target;
@@ -1183,8 +1331,7 @@ static void getPrimary(
     if(sel->target == 2) {
         char *insert = sel->utf8string ? sel->utf8string : sel->xastring;
         if(insert) {
-            TFInsert(sel->tf, insert, strlen(insert));
-            tfRedrawText(sel->tf);
+            insertText(sel->tf, insert, strlen(insert), sel->event);
         }
         
         if(sel->utf8string) {
@@ -1197,9 +1344,10 @@ static void getPrimary(
     }
 }
 
-static void tfInsertPrimary(TextFieldWidget tf) {
+static void tfInsertPrimary(TextFieldWidget tf, XEvent *event) {
     struct PSelection *sel = (void*)XtMalloc(sizeof(struct PSelection));
     sel->tf = tf;
+    sel->event = event;
     sel->target = 0;
     sel->xastring = NULL;
     sel->utf8string = NULL;
@@ -1210,8 +1358,8 @@ static void tfInsertPrimary(TextFieldWidget tf) {
     void *data[2] = { sel, sel };
     
 #ifdef __APPLE__
-    XtGetSelectionValue(w, XA_PRIMARY, targets[0], getSelectionCB, sel, time);
-    XtGetSelectionValue(w, XA_PRIMARY, targets[1], getSelectionCB, sel, time);
+    XtGetSelectionValue((Widget)tf, XA_PRIMARY, targets[0], getPrimary, sel, time);
+    XtGetSelectionValue((Widget)tf, XA_PRIMARY, targets[1], getPrimary, sel, time);
 #else
     XtGetSelectionValues((Widget)tf, XA_PRIMARY, targets, 2, getPrimary, data, time);
 #endif

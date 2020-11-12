@@ -1733,7 +1733,7 @@ void grid_activate(Widget w, FileDialogData *data, XmLGridCallbackStruct *cb) {
     data->end = True;
     data->status = FILEDIALOG_OK;
 }
-
+ 
 void grid_key_pressed(Widget w, FileDialogData *data, XmLGridCallbackStruct *cb) {
     char chars[16];
     KeySym keysym;
@@ -1751,7 +1751,7 @@ void grid_key_pressed(Widget w, FileDialogData *data, XmLGridCallbackStruct *cb)
     int row = 0;
     int selectedRow = XmLGridGetSelectedRow(w);
     
-    int firstMatch = -1;
+    int match = -1;
     
     for(int i=0;i<data->filecount;i++) {
         const char *name = FileName(data->files[i].path);
@@ -1762,20 +1762,23 @@ void grid_key_pressed(Widget w, FileDialogData *data, XmLGridCallbackStruct *cb)
         size_t cmplen = namelen < nchars ? namelen : nchars;
         if(!memcmp(name, chars, cmplen)) {
             if(row <= selectedRow) {
-                if(firstMatch == -1) {
-                    firstMatch = row;
+                if(match == -1) {
+                    match = row;
                 }
             } else {
-                XmLGridSelectRow(w, row, True);
-                return;
+                match = row;
+                break;
             }
         }
         
         row++;
     }
     
-    if(firstMatch > -1) {
-        XmLGridSelectRow(w, firstMatch, True);
+    if(match > -1) {
+        XmLGridSelectRow(w, match, True);
+        XmLGridFocusAndShowRow(w, match+1);
+    } else {
+        XBell(XtDisplay(w), 0);
     }
 }
 
@@ -2623,6 +2626,7 @@ int FileDialog(Widget parent, char *promptString, FileSelection *file, int type)
     XtSetArg(args[n], XmNhorizontalSizePolicy, XmCONSTANT); n++;
     
     data.grid = XmLCreateGrid(data.gridcontainer, "grid", args, n);
+    XmLGridSetIgnoreModifyVerify(data.grid, True);
     XtManageChild(data.grid);
     
     XtVaSetValues(
