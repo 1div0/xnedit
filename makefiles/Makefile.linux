@@ -27,7 +27,10 @@ endif
 #MOTIF = $(MAXX_HOME)/OpenMotif-2.3.1
 
 # Indigo 2.0.1
-MOTIF = $(MAXX_HOME)/OpenMotif-2.3.8
+#MOTIF = $(MAXX_HOME)/OpenMotif-2.3.8
+
+# Indigo 2.1.1
+MOTIF = $(MAXX_HOME)
 
 #
 # To evaluate an alternative layout for the Replace/Find dialog, add
