@@ -41,7 +41,10 @@ MOTIF = $(MAXX_HOME)
 #
 # To use the Motif file dialog, add -DMOTIF_FILEDIALOG to the CFLAGS.
 #
-CFLAGS = -std=gnu99 -I/usr/include/X11 -I$(MOTIF)/include -DHAVE__XMVERSIONSTRING -DMOTIF_FILEDIALOG -DSGI_CUSTOM -DUSE_DIRENT -DUSE_LPR_PRINT_CMD $(shell pkg-config --cflags xft fontconfig)
+# To use an alternative text field widget for search/replace, add
+# -DXNE_TEXTFIELD to the CFLAGS.
+
+CFLAGS = -std=gnu99 -I/usr/include/X11 -I$(MOTIF)/include -DHAVE__XMVERSIONSTRING -DXNE_TEXTFIELD -DMOTIF_FILEDIALOG -DSGI_CUSTOM -DUSE_DIRENT -DUSE_LPR_PRINT_CMD $(shell pkg-config --cflags xft fontconfig)
 ifdef ABI
 CFLAGS += -m$(ABI)
 endif

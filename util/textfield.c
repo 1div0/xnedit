@@ -31,6 +31,7 @@
 #include "../source/textBuf.h" /* Utf8CharLen */
 #include "../source/textSel.h"
 #include "../source/textDisp.h" /* PixelToColor */
+#include "../source/text.h" /* TextPrintXIMError */
 
 #define TF_DEFAULT_FONT_NAME "Monospace:size=10"
 
@@ -352,7 +353,7 @@ void textfield_realize(Widget widget, XtValueMask *mask, XSetWindowAttributes *a
                 win,
                 NULL);
     } else {
-        fprintf(stderr, "TextField: XmImGetXIM failed\n");
+        TextPrintXIMError(); // text.c
     }
     
     tfInitXft(text);
@@ -385,9 +386,15 @@ void textfield_destroy(Widget widget) {
     if(tf->textfield.font != defaultFont) {
         FontUnref(tf->textfield.font);
     }
-    XFreeGC(XtDisplay(widget), tf->textfield.gc);
-    XFreeGC(XtDisplay(widget), tf->textfield.gcInv);
-    XFreeGC(XtDisplay(widget), tf->textfield.highlightBackground);
+    if(tf->textfield.gc) {
+        XFreeGC(XtDisplay(widget), tf->textfield.gc);
+    }
+    if(tf->textfield.gcInv) {
+        XFreeGC(XtDisplay(widget), tf->textfield.gcInv);
+    }
+    if(tf->textfield.highlightBackground) {
+        XFreeGC(XtDisplay(widget), tf->textfield.highlightBackground);
+    }
 }
 
 void textfield_resize(Widget widget) {
@@ -429,7 +436,7 @@ static void tfDrawCursor(TextFieldWidget tf) {
             tf->core.height-tf->textfield.textarea_yoff);
 }
 
-static void tfRedrawText(TextFieldWidget tf) {
+static void tfRedrawText(TextFieldWidget tf) {  
     tfCalcCursorPos(tf);
     
     int border = tf->primitive.shadow_thickness + tf->primitive.highlight_thickness;
@@ -686,8 +693,17 @@ static void insertAP(Widget w, XEvent *event, String *args, Cardinal *nArgs) {
     KeySym keysym;
     int nchars;
     int status;
+    static XComposeStatus compose = {NULL, 0};
     
-    nchars = Xutf8LookupString(tf->textfield.xic, &event->xkey, chars, 127, &keysym, &status);
+    if(tf->textfield.xic) {
+#ifdef X_HAVE_UTF8_STRING
+        nchars = Xutf8LookupString(tf->textfield.xic, &event->xkey, chars, 127, &keysym, &status); 
+#else
+        nchars = XmbLookupString(tf->textfield.xic, &event->xkey, chars, 127, &keysym, &status);
+#endif
+    } else {
+        nchars = XLookupString(&event->xkey, chars, 127, &keysym, &compose);
+    }
     
     insertText(tf, chars, nchars, event);
 }
@@ -904,7 +920,9 @@ static void focusInAP(Widget w, XEvent *event, String *args, Cardinal *nArgs) {
      
     tf->textfield.hasFocus = 1;
     
-    XSetICFocus(tf->textfield.xic);
+    if(tf->textfield.xic) {
+        XSetICFocus(tf->textfield.xic);
+    }
     
     XmAnyCallbackStruct cb;
     cb.reason = XmCR_FOCUS;
@@ -926,7 +944,9 @@ static void focusInAP(Widget w, XEvent *event, String *args, Cardinal *nArgs) {
 static void focusOutAP(Widget w, XEvent *event, String *args, Cardinal *nArgs) {
     TextFieldWidget tf = (TextFieldWidget)w;
     
-    XUnsetICFocus(tf->textfield.xic);
+    if(tf->textfield.xic) {
+        XUnsetICFocus(tf->textfield.xic);
+    }
     
     if(tf->textfield.blinkProcId != 0) {
         XtRemoveTimeOut(tf->textfield.blinkProcId);
@@ -1446,6 +1466,9 @@ void XNETextFieldSetString(Widget widget, char *value) {
     tf->textfield.pos = 0;
     
     tfClearSelection(tf);
+    if(XtIsRealized(widget)) {
+        tfRedrawText(tf);
+    } 
 }
 
 char* XNETextFieldGetString(Widget widget) {
@@ -1465,5 +1488,8 @@ XmTextPosition XNETextFieldGetLastPosition(Widget widget) {
 void XNETextFieldSetInsertionPosition(Widget widget, XmTextPosition i) {
     TextFieldWidget tf = (TextFieldWidget)widget;
     tf->textfield.pos = i <= tf->textfield.length ? i : tf->textfield.length;
+    if(XtIsRealized(widget)) {
+        tfRedrawText(tf);
+    }
 } 
 
